@@ -117,6 +117,7 @@ export function recentMaterials(state,child,category){
   const rows=state.habits.filter(h=>h.childId===child&&(!h.archivedFrom||recorded.has(h.id))).flatMap(h=>h.versions).filter(v=>v.category===category&&v.material).sort((a,b)=>b.effectiveFrom.localeCompare(a.effectiveFrom));
   return [...new Set(rows.map(v=>v.material))].slice(0,8);
 }
+export function historyHabits(state,child){const recorded=new Set(entriesFor(state,child).map(e=>e.habitId));return state.habits.filter(h=>h.childId===child&&(!h.dailyPlan||!h.archivedFrom||recorded.has(h.id)));}
 export function scheduled(v,date) { if(!v) return false; if(v.frequency==='weekdays') return v.days.includes(dateObj(date).getDay()); if(v.frequency==='once') return date===v.dueDate; return true; }
 export function entryKey(child,habit,date) { return `${child}/${habit}/${date}`; }
 export function entriesFor(state,child,start='0000-00-00',end='9999-99-99') { return Object.values(state.entries).filter(e=>e.childId===child && e.date>=start && e.date<=end); }

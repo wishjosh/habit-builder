@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {freshState,today,addDays,clone,saveWeeklyPlan,weeklyAt,weeklyDue,dailyGroupsFor,saveDailyPlan,removeDailyPlan,markDone,undoDone,starSummary,entriesFor,groupRecords,recentMaterials,validateState,deleteCategory,cardsFor} from '../engine.js';
+import {freshState,today,addDays,clone,saveWeeklyPlan,weeklyAt,weeklyDue,dailyGroupsFor,saveDailyPlan,removeDailyPlan,markDone,undoDone,starSummary,entriesFor,groupRecords,recentMaterials,historyHabits,validateState,deleteCategory,cardsFor} from '../engine.js';
 import {makeBackup,readBackup} from '../storage.js';
 import {sampleState} from './fixtures.mjs';
 const day=today(),tomorrow=addDays(day,1),child='child-1';
@@ -47,7 +47,7 @@ test('세부 계획 수정·삭제는 부모 확인, 완료 기록 변경 방지
  assert.throws(()=>removeDailyPlan(s,child,id));
  saveDailyPlan(s,child,id,{...values,title:'1쪽 풀기'},day,true);markDone(s,child,id,day);
  const before=clone(s.entries);assert.throws(()=>saveDailyPlan(s,child,id,values,day,true));assert.throws(()=>removeDailyPlan(s,child,id,true));assert.deepEqual(s.entries,before);
- undoDone(s,child,id,day);removeDailyPlan(s,child,id,true);assert.equal(cardsFor(s,child,day).length,0);assert.equal(starSummary(s,child).balance,0);assert.deepEqual(recentMaterials(s,child,'math'),[]);
+ undoDone(s,child,id,day);removeDailyPlan(s,child,id,true);assert.equal(cardsFor(s,child,day).length,0);assert.equal(starSummary(s,child).balance,0);assert.deepEqual(recentMaterials(s,child,'math'),[]);assert.equal(historyHabits(s,child).length,0);
 });
 test('삭제한 묶음의 주간 일정은 중단하고 완료·별과 옮긴 세부 계획 보존',()=>{
  const s=freshState(day);saveWeeklyPlan(s,child,'reading',{mode:'daily'});
