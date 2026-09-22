@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {freshState,markDone,undoDone,starSummary,redeem,cancelRedemption,saveHabit,habitAt,cardsFor,validateState,weekStart,monthDays,addDays,today} from '../engine.js';
+import {freshState,markDone,undoDone,starSummary,redeem,cancelRedemption,saveHabit,habitAt,cardsFor,validateState,weekStart,monthDays,addDays,today,groupRecords,groupByCategory,taskLabel,entriesFor} from '../engine.js';
 import {loadState,persist,makeBackup,readBackup,toCSV,STORE_KEY,BACKUP_KEY} from '../storage.js';
 const day='2026-09-14';
 test('완료 중복 적립 방지, 아이별 분리, 취소',()=>{
@@ -22,8 +22,8 @@ test('주간 목표는 월요일에 새로 시작하며 초과 적립 방지',()
 test('활동 수정과 보관 후 과거 기록의 제목, 별 유지',()=>{
  const s=freshState(day);markDone(s,'child-1','habit-1',day);
  saveHabit(s,'child-1','habit-1',{title:'새 활동',detail:'새 기준',frequency:'daily',category:'life',points:5},addDays(day,1));
- assert.equal(habitAt(s.habits[0],day).title,'책과 만나는 시간');assert.equal(starSummary(s,'child-1').balance,1);
- s.habits[0].archivedFrom=addDays(day,2);assert.equal(cardsFor(s,'child-1',day)[0].entry.snapshot.title,'책과 만나는 시간');
+ assert.equal(habitAt(s.habits[0],day).title,'1~2장 읽기');assert.equal(starSummary(s,'child-1').balance,1);
+ s.habits[0].archivedFrom=addDays(day,2);assert.equal(cardsFor(s,'child-1',day)[0].entry.snapshot.title,'1~2장 읽기');
  assert.equal(cardsFor(s,'child-1',addDays(day,3)).some(c=>c.habit.id==='habit-1'),false);validateState(s);
 });
 test('월간 및 한 번 하는 활동 일정',()=>{
@@ -52,4 +52,32 @@ test('다른 아이의 기록과 잘못된 날짜가 든 백업 거절',()=>{
 test('윤년과 주간 경계, CSV 수식 보호',()=>{
  assert.equal(monthDays('2024-02').length,29);assert.equal(weekStart('2026-09-20'),day);
  const s=freshState(day);s.children[0].name='=1+1';markDone(s,'child-1','habit-1',day);assert.ok(toCSV(s).includes("'=1+1"));
+});
+test('한 묶음의 두 책을 따로 완료하고 월간 독서 목록에 반영',()=>{
+ const s=freshState(day);saveHabit(s,'child-1',null,{category:'reading',material:'어린 왕자',title:'3장 읽기',frequency:'once',dueDate:day,points:2},day);
+ const other=s.habits.at(-1).id;markDone(s,'child-1','habit-1',day);markDone(s,'child-1',other,day);
+ const cards=groupByCategory(cardsFor(s,'child-1',day),c=>c.config);assert.equal(cards.find(g=>g.id==='reading').items.length,2);
+ const reading=groupRecords(entriesFor(s,'child-1','2026-09-01','2026-09-30')).find(g=>g.id==='reading');
+ assert.deepEqual(reading.materials.map(m=>m.title),['톰 소여의 모험','어린 왕자']);assert.equal(starSummary(s,'child-1').balance,3);
+ assert.throws(()=>markDone(s,'child-1','reading',day));undoDone(s,'child-1',other,day);assert.equal(groupRecords(entriesFor(s,'child-1'))[0].materials.length,1);
+});
+test('같은 책의 다른 분량과 다른 날짜를 한 제목 아래 보존',()=>{
+ const s=freshState(day);markDone(s,'child-1','habit-1',day);
+ saveHabit(s,'child-1',null,{category:'reading',material:'톰 소여의 모험',title:'3~4장 읽기',frequency:'once',dueDate:addDays(day,1),points:1},day);
+ markDone(s,'child-1',s.habits.at(-1).id,addDays(day,1));const group=groupRecords(entriesFor(s,'child-1'))[0];
+ assert.equal(group.materials.length,1);assert.deepEqual(group.materials[0].entries.map(e=>e.snapshot.title),['3~4장 읽기','1~2장 읽기']);
+ assert.equal(groupRecords(entriesFor(s,'child-2')).length,0);assert.equal(groupRecords(entriesFor(s,'child-1','2026-08-01','2026-08-31')).length,0);
+});
+test('완료 뒤 같은 날 묶음·교재 수정해도 원래 기록으로 표시',()=>{
+ const s=freshState(day);markDone(s,'child-1','habit-1',day);
+ saveHabit(s,'child-1','habit-1',{category:'math',material:'눈높이 수학',title:'A1권 풀기',frequency:'daily',points:3},day);
+ const card=cardsFor(s,'child-1',day).find(c=>c.habit.id==='habit-1');assert.equal(card.config.category,'reading');assert.equal(card.config.material,'톰 소여의 모험');
+ const records=readBackup(makeBackup(s));assert.equal(groupRecords(entriesFor(records,'child-1'))[0].id,'reading');
+ assert.equal(taskLabel(card.config),'톰 소여의 모험 · 1~2장 읽기');assert.match(toCSV(s),/톰 소여의 모험/);
+});
+test('옛 형식 백업 호환과 새 책·교재 입력 검증',()=>{
+ const s=freshState(day);s.habits.forEach(h=>h.versions.forEach(v=>delete v.material));markDone(s,'child-1','habit-1',day);
+ assert.doesNotThrow(()=>validateState(s));assert.equal(groupRecords(entriesFor(s,'child-1'))[0].materials[0].title,'1~2장 읽기');
+ assert.throws(()=>saveHabit(s,'child-1',null,{category:'reading',title:'읽기',frequency:'daily'},day));
+ s.habits[0].versions[0].material={title:'bad'};assert.throws(()=>validateState(s));
 });
