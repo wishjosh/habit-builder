@@ -1,4 +1,5 @@
 export const SCHEMA = 1;
+export const ZODIAC_AVATARS = [['rat','쥐'],['ox','소'],['tiger','호랑이'],['bunny','토끼'],['dragon','용'],['snake','뱀'],['horse','말'],['sheep','양'],['monkey','원숭이'],['rooster','닭'],['dog','개'],['pig','돼지']];
 export const CATEGORIES = {
   reading: { label: '책 읽기', icon: 'book', color: 'peach' },
   math: { label: '수학', icon: 'pencil', color: 'lavender' },
@@ -214,7 +215,7 @@ export function validateState(s) {
   if(!Array.isArray(categories)||!categories.length||categories.length>500)fail();
   for(const c of categories){if(!c||typeof c.id!=='string'||!(/^[a-zA-Z0-9_-]{1,100}$/).test(c.id)||categoryIds.has(c.id)||!short(c.label,30)||!c.label.trim()||!Object.hasOwn(CATEGORIES,c.type)||c.archivedFrom!==undefined&&!isDate(c.archivedFrom))fail();categoryIds.add(c.id);}
   const active=categories.filter(c=>!c.archivedFrom);if(!active.length||new Set(active.map(c=>c.label.trim().toLocaleLowerCase())).size!==active.length)fail();
-  for(const c of s.children){if(!short(c.id,100)||ids.has(c.id)||!short(c.name,30)||!['fox','bunny','bear','cat'].includes(c.avatar)||!['independent','together'].includes(c.style))fail();ids.add(c.id);}
+  for(const c of s.children){if(!short(c.id,100)||ids.has(c.id)||!short(c.name,30)||![...ZODIAC_AVATARS.map(([id])=>id),'fox','bear','cat'].includes(c.avatar)||!['independent','together'].includes(c.style))fail();ids.add(c.id);}
   const weeklyPlans=s.weeklyPlans===undefined?[]:s.weeklyPlans,weeklyIds=new Set(),weeklyPairs=new Set();
   if(!Array.isArray(weeklyPlans)||weeklyPlans.length>4000)fail();
   for(const p of weeklyPlans){
