@@ -1,4 +1,4 @@
-import {weeklyScreen,dailyScreenGroups,parentCheck} from './planner-ui.js';
+import {weeklyScreen,dailyScreenGroups,parentCheck,planPageSwitch} from './planner-ui.js';
 import {weeklyAt,weeklyLabel,saveWeeklyPlan,saveDailyPlan,removeDailyPlan,recentMaterials,historyHabits,activeCategories,categoryInfo,saveCategory,deleteCategory,categoryHabits,today,dateObj,addDays,weekStart,monthDays,datesBetween,uid,clone,freshState,habitAt,entriesFor,cardsFor,markDone,undoDone,starSummary,redeem,cancelRedemption,saveHabit,frequencyLabel,touch,validateState,taskLabel,groupByCategory} from './engine.js';
 import {loadState,persist,makeBackup,readBackup,toCSV,STORE_KEY,BACKUP_KEY} from './storage.js';
 import {icon,avatar,garden,esc} from './ui.js';
@@ -10,7 +10,7 @@ const loaded=loadState();let state=loaded.state;
 let page='today',childId=state?.children[0].id,date=today(),recordTab='week',recordMonth=today().slice(0,7),selectedCalendarDay=today();
 let toastTimer,cloud=null,cloudConfig=readCloudConfig(),syncBusy=false,cloudMessage='',generation=0,lastSaved=null,selectedAvatar='fox';
 const weekdays=['일','월','화','수','목','금','토'];
-const navItems=[['today','home','오늘'],['weekly','calendar','주간계획'],['records','chart','내 기록'],['rewards','gift','선물'],['parent','settings','부모 메뉴']];
+const navItems=[['today','home','오늘'],['weekly','calendar','이번 주'],['records','chart','내 기록'],['rewards','gift','선물'],['parent','settings','부모 메뉴']];
 const child=()=>state.children.find(c=>c.id===childId)||state.children[0];
 const fmt=d=>`${Number(d.slice(5,7))}월 ${Number(d.slice(8))}일 ${weekdays[dateObj(d).getDay()]}요일`;
 const restKey=d=>`${childId}/${d}`;
@@ -31,8 +31,9 @@ function render(){
 function renderRecovery(){root.innerHTML=`<main class="content"><div class="danger-box"><h1>기록을 먼저 확인해 주세요</h1><p>${esc(loaded.warning)}</p><p>이전 저장본으로 복구하거나, 원본 파일을 내려받아 보관할 수 있어요.</p><div class="button-row">${btn('recover','이전 저장본 복구','primary')}${btn('raw-export','현재 저장 원본 받기')}${btn('import','백업 파일 불러오기')}</div><input id="import-file" type="file" accept=".json,application/json" class="file-input"></div></main>`;}
 function renderToday(){
   const c=child(),entries=entriesFor(state,c.id,date,date),stars=starSummary(state,c.id),rest=state.restDays[restKey(date)],future=date>today();
-  return `${heading(`${esc(c.name)}의 ${future?'내일':date===today()?'오늘':fmt(date)}`, `<span class="soft-label">${icon(cloudConfig?.enabled?'cloud':'check')}<span id="save-label">${esc(saveLabel())}</span></span>`)}
-  <div class="planning-toolbar"><div class="tabbar" aria-label="계획할 날짜">${btn('date','오늘',date===today()?'active':'',`data-date="${today()}"`)}${btn('date','내일 미리 정하기',future?'active':'',`data-date="${addDays(today(),1)}"`)}</div>${btn('page',`${icon('calendar')}주간계획`,'text-btn','data-page="weekly"')}</div>
+  return `${heading('오늘 할 일', `<span class="soft-label">${icon(cloudConfig?.enabled?'cloud':'check')}<span id="save-label">${esc(saveLabel())}</span></span>`)}
+  ${planPageSwitch('today',btn)}
+  <div class="planning-toolbar"><div class="tabbar" aria-label="계획할 날짜">${btn('date','오늘',date===today()?'active':'',`data-date="${today()}"`)}${btn('date','내일 미리 정하기',future?'active':'',`data-date="${addDays(today(),1)}"`)}</div></div>
   <p class="planner-intro">${future?'내일 할 일을 미리 정해 두어요. 완료는 내일 표시할 수 있어요.':'할 일을 정하고, 해낸 뒤 한 번 눌러요.'}</p>
   <div class="daily-status"><span>${icon('calendar')}${fmt(date)}</span>${!future?`<span>${icon('check')}${entries.length}개 실천</span>`:''}<span>${icon('star')}모은 별 ${stars.balance}개</span></div>
   ${rest?'<div class="banner rest">쉬어 가는 날이에요. 이미 남긴 계획과 기록은 그대로예요.</div>':''}
@@ -65,7 +66,7 @@ function renderRewards(){
 }
 function renderParent(){
   const habits=state.habits.filter(h=>h.childId===childId&&!h.archivedFrom&&!h.dailyPlan);
-  return `${heading('우리 가족의 약속 만들기')}<div class="banner">아이가 주간계획에서 할 날을 고르고, 오늘·내일 화면에서 내용을 정해요. 이미 정한 계획의 변경과 삭제는 부모님과 함께 확인해요.</div><section class="panel"><h2>함께하는 아이들</h2>${state.children.map(c=>`<div class="settings-item">${avatar(c.avatar)}<div class="grow"><strong>${esc(c.name)}</strong><p>${c.style==='together'?'부모와 함께 기록해요':'스스로 확인하고 기록해요'}</p></div>${btn('edit-child','바꾸기','text-btn',`data-id="${esc(c.id)}"`)}</div>`).join('')}</section>${renderCategorySettings()}<section class="panel"><div class="section-head" style="margin-top:0"><h2>이전에 만든 할 일</h2>${btn('page','주간계획 보기','text-btn','data-page="weekly"')}</div>${habits.length?parentGroups(habits,childId,btn,state):'<p>이전에 만든 할 일이 없어요.</p>'}<p>활동을 바꾸거나 그만해도 이미 남긴 기록과 별은 보관해요.</p></section><section class="panel"><div class="section-head" style="margin-top:0"><h2>우리 가족의 선물</h2>${btn('add-reward',`${icon('plus')}추가`,'text-btn')}</div>${state.rewards.map(r=>`<div class="settings-item"><span class="activity-icon yellow">${icon(r.icon||'gift')}</span><div class="grow"><strong>${esc(r.title)}</strong><p>별 ${r.cost}개</p></div>${btn('edit-reward','수정','text-btn',`data-id="${esc(r.id)}"`)}</div>`).join('')}${state.redemptions.some(r=>!r.cancelledAt)?`<details class="settings-section" style="margin-top:20px"><summary>선물 교환 내역 관리</summary>${state.redemptions.filter(r=>!r.cancelledAt).slice().reverse().map(r=>`<div class="settings-item"><div class="grow"><strong>${esc(state.children.find(c=>c.id===r.childId)?.name)} · ${esc(r.title)}</strong><p>별 ${r.cost}개 · ${fmt(today(new Date(r.at)))}</p></div>${btn('cancel-reward','교환 취소','text-btn',`data-id="${esc(r.id)}"`)}</div>`).join('')}</details>`:''}</section>
+  return `${heading('우리 가족의 약속 만들기')}<div class="banner">아이가 이번 주 할 일에서 할 날을 고르고, 오늘·내일 화면에서 내용을 정해요. 이미 정한 계획의 변경과 삭제는 부모님과 함께 확인해요.</div><section class="panel"><h2>함께하는 아이들</h2>${state.children.map(c=>`<div class="settings-item">${avatar(c.avatar)}<div class="grow"><strong>${esc(c.name)}</strong><p>${c.style==='together'?'부모와 함께 기록해요':'스스로 확인하고 기록해요'}</p></div>${btn('edit-child','바꾸기','text-btn',`data-id="${esc(c.id)}"`)}</div>`).join('')}</section>${renderCategorySettings()}<section class="panel"><div class="section-head" style="margin-top:0"><h2>이전에 만든 할 일</h2>${btn('page','이번 주 할 일 보기','text-btn','data-page="weekly"')}</div>${habits.length?parentGroups(habits,childId,btn,state):'<p>이전에 만든 할 일이 없어요.</p>'}<p>활동을 바꾸거나 그만해도 이미 남긴 기록과 별은 보관해요.</p></section><section class="panel"><div class="section-head" style="margin-top:0"><h2>우리 가족의 선물</h2>${btn('add-reward',`${icon('plus')}추가`,'text-btn')}</div>${state.rewards.map(r=>`<div class="settings-item"><span class="activity-icon yellow">${icon(r.icon||'gift')}</span><div class="grow"><strong>${esc(r.title)}</strong><p>별 ${r.cost}개</p></div>${btn('edit-reward','수정','text-btn',`data-id="${esc(r.id)}"`)}</div>`).join('')}${state.redemptions.some(r=>!r.cancelledAt)?`<details class="settings-section" style="margin-top:20px"><summary>선물 교환 내역 관리</summary>${state.redemptions.filter(r=>!r.cancelledAt).slice().reverse().map(r=>`<div class="settings-item"><div class="grow"><strong>${esc(state.children.find(c=>c.id===r.childId)?.name)} · ${esc(r.title)}</strong><p>별 ${r.cost}개 · ${fmt(today(new Date(r.at)))}</p></div>${btn('cancel-reward','교환 취소','text-btn',`data-id="${esc(r.id)}"`)}</div>`).join('')}</details>`:''}</section>
   <section class="panel"><h2>가족 기록 연결</h2><p>아이패드와 부모님의 기기에서 같은 기록을 볼 수 있어요. 연결 전에도 이 기기에는 자동 저장돼요.</p><div class="cloud-status" id="cloud-status">${esc(saveLabel())}</div><div class="button-row">${btn('connect',`${icon('cloud')}${cloudConfig?.enabled?'연결 설정':'가족 연결 코드 입력'}`)}${cloudConfig?.enabled?btn('sync','지금 동기화')+btn('share-connection','다른 기기 연결'):''}</div>${cloudConfig?.enabled&&cloudConfig.dirty?'<p>아직 다른 기기에 전달하지 못한 기록이 있어요. 연결을 확인한 뒤 동기화해 주세요.</p>':''}</section>
   <section class="panel"><h2>기록 보관하기</h2><p>백업 파일에는 두 아이의 설정과 기록이 함께 담겨요. 표 파일은 스프레드시트에서 열 수 있어요.</p><div class="button-row">${btn('export',`${icon('download')}전체 기록 백업`)}${btn('csv',`${icon('download')}실천 기록 표`)}${btn('import',`${icon('upload')}백업 불러오기`)}</div><input id="import-file" type="file" accept=".json,application/json" class="file-input"><details class="settings-section" style="margin-top:20px"><summary>아이패드 홈 화면에 추가하기</summary><p>Safari에서 앱 주소를 열고 공유 버튼 → ‘홈 화면에 추가’를 선택하세요. 처음 열 때 인터넷에 연결하면 이후에는 연결이 끊겨도 기록할 수 있어요. 가족 기록 연결은 인터넷이 돌아오면 이어집니다.</p><p>기록은 브라우저마다 따로 저장돼요. 다른 브라우저나 홈 화면 앱으로 옮길 때는 가족 연결 코드 또는 백업 파일을 사용해 주세요.</p></details></section><p class="version-note">습관 형성 시스템 · Habit Builder 0.4<br>아이의 속도에 맞춰, 우리 가족이 함께 만들어요.</p>`;
 }
@@ -181,9 +182,9 @@ document.addEventListener('click',event=>{
     if(action==='weekly-edit'){weeklyEditor(el.dataset.category);return;}
     if(action==='daily-add'||action==='daily-edit'){dailyEditor(id,el.dataset.category);return;}
     if(action==='recent-material'){dialog.querySelector('[name="material"]').value=el.dataset.material;return;}
-    if(action==='daily-remove'){confirmModal('이 계획을 지울까요?','부모님과 함께 확인해 주세요. 주간계획의 묶음과 지난 기록은 그대로 남아요.','daily-remove-confirm','계획 삭제',`data-id="${esc(id)}"`);return;}
+    if(action==='daily-remove'){confirmModal('이 계획을 지울까요?','부모님과 함께 확인해 주세요. 이번 주 할 일의 묶음과 지난 기록은 그대로 남아요.','daily-remove-confirm','계획 삭제',`data-id="${esc(id)}"`);return;}
     if(action==='daily-remove-confirm'){requireParent();if(commit(s=>removeDailyPlan(s,childId,id,true),'이 계획을 지웠어요.'))dialog.close();return;}
-    if(action==='page'){page=el.dataset.page;render();window.scrollTo({top:0});return;}
+    if(action==='page'){page=el.dataset.page;if(page==='today')date=today();render();window.scrollTo({top:0});return;}
     if(action==='child'){childId=id;render();return;}
     if(action==='date'){date=el.dataset.date;render();return;}
     if(action==='date-today'){date=today();render();return;}
@@ -238,7 +239,7 @@ document.addEventListener('change',async event=>{
 document.addEventListener('submit',async event=>{
   const form=event.target.closest('[data-form]');if(!form)return;event.preventDefault();const data=new FormData(form),type=form.dataset.form,id=form.dataset.id;
   try{
-    if(type==='weekly-plan'){const choice=data.get('weeklyMode'),mode=['mwf','weekdays','custom'].includes(choice)?'days':choice,days=choice==='mwf'?[1,3,5]:choice==='weekdays'?[1,2,3,4,5]:data.getAll('weeklyDays').map(Number);if(commit(s=>saveWeeklyPlan(s,form.dataset.child,form.dataset.category,{mode,days,anchorDate:data.get('anchorDate')},data.has('parentConfirmed')),'주간계획을 저장했어요.'))dialog.close();}
+    if(type==='weekly-plan'){const choice=data.get('weeklyMode'),mode=['mwf','weekdays','custom'].includes(choice)?'days':choice,days=choice==='mwf'?[1,3,5]:choice==='weekdays'?[1,2,3,4,5]:data.getAll('weeklyDays').map(Number);if(commit(s=>saveWeeklyPlan(s,form.dataset.child,form.dataset.category,{mode,days,anchorDate:data.get('anchorDate')},data.has('parentConfirmed')),'이번 주 할 일을 저장했어요.'))dialog.close();}
     if(type==='daily-plan'){if(commit(s=>saveDailyPlan(s,form.dataset.child,id,Object.fromEntries(data),form.dataset.day,data.has('parentConfirmed')),'할 일을 정했어요.'))dialog.close();}
     if((type==='category'||type==='habit')&&id||type==='delete-category')requireParent(form);
     if(type==='category'){if(commit(s=>saveCategory(s,id,Object.fromEntries(data)),'상위 묶음을 저장했어요.'))dialog.close();}
