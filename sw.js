@@ -1,4 +1,4 @@
-const CACHE='habit-builder-v1.1.0';
+const CACHE='habit-builder-v1.1.1';
 const FILES=['./','./index.html','./style.css','./app.js','./engine.js','./storage.js','./cloud.js','./ui.js','./hierarchy.js','./manifest.webmanifest','./assets/icon.svg','./assets/icon-192.png','./assets/icon-512.png','./assets/apple-touch-icon.png'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(FILES)));self.skipWaiting();});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('habit-builder-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
