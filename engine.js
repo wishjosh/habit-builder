@@ -7,6 +7,37 @@ export const CATEGORIES = {
   movement: { label: '몸 움직이기', icon: 'move', color: 'mint' },
   art: { label: '만들고 표현하기', icon: 'music', color: 'pink' }
 };
+export const defaultCategories=()=>Object.entries(CATEGORIES).map(([id,c])=>({id,label:c.label,type:id}));
+export function allCategories(state){return (state?.categories||defaultCategories()).map(c=>({...c,icon:CATEGORIES[c.type].icon,color:CATEGORIES[c.type].color}));}
+export function activeCategories(state){return allCategories(state).filter(c=>!c.archivedFrom);}
+export function categoryInfo(state,id){return allCategories(state).find(c=>c.id===id);}
+export function saveCategory(state,id,values){
+  const label=String(values.label||'').trim();
+  if(!label||label.length>30)throw new Error('묶음 이름을 1~30자로 적어 주세요.');
+  if(!Object.hasOwn(CATEGORIES,values.type))throw new Error('묶음의 입력 방식을 골라 주세요.');
+  if(activeCategories(state).some(c=>c.id!==id&&c.label.toLocaleLowerCase()===label.toLocaleLowerCase()))throw new Error('같은 이름의 묶음이 있어요. 다른 이름을 적어 주세요.');
+  state.categories??=defaultCategories();
+  if(id){const c=state.categories.find(c=>c.id===id&&!c.archivedFrom);if(!c)throw new Error('묶음을 찾을 수 없어요.');Object.assign(c,{label,type:values.type});}
+  else{if(state.categories.length>=500)throw new Error('묶음을 더 만들 수 없어요. 기존 묶음을 사용해 주세요.');id=uid();state.categories.push({id,label,type:values.type});}
+  touch(state);return id;
+}
+export function categoryHabits(state,id,date=today()){
+  return state.habits.filter(h=>(!h.archivedFrom||h.archivedFrom>date)&&(habitAt(h,date)?.category===id||h.versions.some(v=>v.effectiveFrom>date&&v.category===id)));
+}
+export function deleteCategory(state,id,destination,date=today()){
+  const category=activeCategories(state).find(c=>c.id===id),others=activeCategories(state).filter(c=>c.id!==id);
+  if(!category)throw new Error('묶음을 찾을 수 없어요.');
+  if(!others.length)throw new Error('묶음은 하나 이상 필요해요. 먼저 새 묶음을 만들어 주세요.');
+  const habits=categoryHabits(state,id,date);
+  if(habits.length&&!others.some(c=>c.id===destination))throw new Error('할 일을 옮길 묶음을 골라 주세요.');
+  for(const h of habits){
+    const current=habitAt(h,date);
+    if(current?.category===id){h.versions=h.versions.filter(v=>v.effectiveFrom!==date);h.versions.push({...clone(current),effectiveFrom:date,category:destination});}
+    h.versions=h.versions.map(v=>v.effectiveFrom>date&&v.category===id?{...v,category:destination}:v).sort((a,b)=>a.effectiveFrom.localeCompare(b.effectiveFrom));
+  }
+  state.categories??=defaultCategories();state.categories.find(c=>c.id===id).archivedFrom=date;
+  touch(state);return habits.length;
+}
 export function today(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
@@ -22,7 +53,7 @@ export function freshState(date=today()) {
   const state = { schema: SCHEMA, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), children: [
     { id:'child-1', name:'첫째', avatar:'fox', style:'independent' },
     { id:'child-2', name:'둘째', avatar:'bunny', style:'together' }
-  ], habits: [], entries: {}, restDays: {}, rewards: [
+  ], categories:defaultCategories(), habits: [], entries: {}, restDays: {}, rewards: [
     { id:'reward-1', title:'함께 보드게임 하기', cost:12, icon:'game' },
     { id:'reward-2', title:'주말 놀이 고르기', cost:20, icon:'sparkles' }
   ], redemptions: [], notes: {} };
@@ -93,24 +124,26 @@ export function saveHabit(state,child,id,values,date=today()) {
   const title=String(values.title||'').trim().slice(0,60);
   if(!title) throw new Error('활동 이름을 적어 주세요.');
   const material=String(values.material||'').trim().slice(0,100);
-  if(['reading','math'].includes(values.category)&&!material)throw new Error('책이나 교재 이름을 적어 주세요.');
+  const category=values.category?activeCategories(state).find(c=>c.id===values.category):(activeCategories(state).find(c=>c.id==='life')||activeCategories(state)[0]);
+  if(!category)throw new Error('사용할 상위 묶음을 골라 주세요.');
+  if(['reading','math'].includes(category.type)&&!material)throw new Error('책이나 교재 이름을 적어 주세요.');
   const frequency=values.frequency;
   if(!['daily','weekdays','weekly','monthly','once'].includes(frequency)) throw new Error('반복 방법을 선택해 주세요.');
   const days=[...new Set(values.days||[])].map(Number).filter(n=>n>=0&&n<=6);
   if(frequency==='weekdays'&&!days.length) throw new Error('실천할 요일을 골라 주세요.');
   if(frequency==='once'&&(!isDate(values.dueDate)||values.dueDate<date)) throw new Error('오늘 이후의 활동 날짜를 골라 주세요.');
-  const v={effectiveFrom:date,title,material,detail:String(values.detail||'').trim().slice(0,160),category:CATEGORIES[values.category]?values.category:'life',frequency,days,target:Math.min(frequency==='weekly'?7:31,Math.max(1,Math.round(Number(values.target)||1))),points:Math.min(20,Math.max(0,Math.round(Number(values.points)||0)))};
+  const v={effectiveFrom:date,title,material,detail:String(values.detail||'').trim().slice(0,160),category:category.id,frequency,days,target:Math.min(frequency==='weekly'?7:31,Math.max(1,Math.round(Number(values.target)||1))),points:Math.min(20,Math.max(0,Math.round(Number(values.points)||0)))};
   if(frequency==='once')v.dueDate=values.dueDate;
   if(id){const h=state.habits.find(h=>h.id===id&&h.childId===child);if(!h)throw new Error('활동을 찾을 수 없어요.');h.versions=h.versions.filter(x=>x.effectiveFrom!==date);h.versions.push(v);delete h.archivedFrom;}
   else state.habits.push({id:uid(),childId:child,versions:[v]});
   touch(state);
 }
 export function taskLabel(v){return v.material?`${v.material} · ${v.title}`:v.title;}
-export function groupByCategory(items,configOf=x=>x){
-  return Object.entries(CATEGORIES).map(([id,category])=>({id,...category,items:items.filter(item=>configOf(item).category===id)})).filter(group=>group.items.length);
+export function groupByCategory(items,configOf=x=>x,state){
+  return allCategories(state).map(category=>({...category,items:items.filter(item=>configOf(item).category===category.id)})).filter(group=>group.items.length);
 }
-export function groupRecords(records){
-  return groupByCategory(records,e=>e.snapshot).map(group=>{
+export function groupRecords(records,state){
+  return groupByCategory(records,e=>e.snapshot,state).map(group=>{
     const materials=new Map();
     for(const entry of group.items){const title=entry.snapshot.material||entry.snapshot.title;const key=(entry.snapshot.material?'material:':'task:')+title;
       if(!materials.has(key))materials.set(key,{key,title,entries:[]});materials.get(key).entries.push(entry);
@@ -129,17 +162,21 @@ export function validateState(s) {
   const fail=()=>{throw new Error('이 앱에서 만든 올바른 백업 파일이 아니에요.');};
   if(!s||s.schema!==SCHEMA||!Array.isArray(s.children)||s.children.length<1||s.children.length>8||!Array.isArray(s.habits)||s.habits.length>500||!s.entries||typeof s.entries!=='object'||Array.isArray(s.entries)||!s.restDays||typeof s.restDays!=='object'||!Array.isArray(s.rewards)||!Array.isArray(s.redemptions)||!s.notes||typeof s.notes!=='object')fail();
   const ids=new Set();const short=(x,n)=>typeof x==='string'&&x.length>0&&x.length<=n;
+  const categories=s.categories===undefined?defaultCategories():s.categories,categoryIds=new Set();
+  if(!Array.isArray(categories)||!categories.length||categories.length>500)fail();
+  for(const c of categories){if(!c||typeof c.id!=='string'||!(/^[a-zA-Z0-9_-]{1,100}$/).test(c.id)||categoryIds.has(c.id)||!short(c.label,30)||!c.label.trim()||!Object.hasOwn(CATEGORIES,c.type)||c.archivedFrom!==undefined&&!isDate(c.archivedFrom))fail();categoryIds.add(c.id);}
+  const active=categories.filter(c=>!c.archivedFrom);if(!active.length||new Set(active.map(c=>c.label.trim().toLocaleLowerCase())).size!==active.length)fail();
   for(const c of s.children){if(!short(c.id,100)||ids.has(c.id)||!short(c.name,30)||!['fox','bunny','bear','cat'].includes(c.avatar)||!['independent','together'].includes(c.style))fail();ids.add(c.id);}
   const habits=new Set();
   for(const h of s.habits){if(!short(h.id,100)||habits.has(h.id)||!ids.has(h.childId)||!Array.isArray(h.versions)||!h.versions.length||h.versions.length>1000||h.archivedFrom&&!isDate(h.archivedFrom))fail();habits.add(h.id);
-    for(const v of h.versions){if(!isDate(v.effectiveFrom)||!short(v.title,60)||typeof v.detail!=='string'||v.detail.length>160||!CATEGORIES[v.category]||!['daily','weekdays','weekly','monthly','once'].includes(v.frequency)||!Array.isArray(v.days)||v.days.some(d=>!Number.isInteger(d)||d<0||d>6)||v.frequency==='weekdays'&&!v.days.length||!Number.isInteger(v.target)||v.target<1||v.target>31||v.frequency==='weekly'&&v.target>7||!Number.isInteger(v.points)||v.points<0||v.points>20||v.frequency==='once'&&!isDate(v.dueDate))fail();}
+    for(const v of h.versions){if(!isDate(v.effectiveFrom)||!short(v.title,60)||typeof v.detail!=='string'||v.detail.length>160||!categoryIds.has(v.category)||!['daily','weekdays','weekly','monthly','once'].includes(v.frequency)||!Array.isArray(v.days)||v.days.some(d=>!Number.isInteger(d)||d<0||d>6)||v.frequency==='weekdays'&&!v.days.length||!Number.isInteger(v.target)||v.target<1||v.target>31||v.frequency==='weekly'&&v.target>7||!Number.isInteger(v.points)||v.points<0||v.points>20||v.frequency==='once'&&!isDate(v.dueDate))fail();}
   }
   if(Object.keys(s.entries).length>50000||s.redemptions.length>10000||s.rewards.length>200)fail();
   for(const v of s.habits.flatMap(h=>h.versions).concat(Object.values(s.entries).map(e=>e?.snapshot))){if(v?.material!==undefined&&(typeof v.material!=='string'||v.material.length>100))fail();}
-  for(const [key,e] of Object.entries(s.entries)){const h=s.habits.find(h=>h.id===e.habitId);if(!ids.has(e.childId)||!h||h.childId!==e.childId||!isDate(e.date)||key!==entryKey(e.childId,e.habitId,e.date)||!Number.isInteger(e.points)||e.points<0||e.points>20||!e.snapshot||!short(e.snapshot.title,60)||!CATEGORIES[e.snapshot.category]||!['daily','weekdays','weekly','monthly','once'].includes(e.snapshot.frequency)||!Array.isArray(e.snapshot.days)||!Number.isInteger(e.snapshot.target)||typeof e.snapshot.detail!=='string')fail();}
+  for(const [key,e] of Object.entries(s.entries)){const h=s.habits.find(h=>h.id===e.habitId);if(!ids.has(e.childId)||!h||h.childId!==e.childId||!isDate(e.date)||key!==entryKey(e.childId,e.habitId,e.date)||!Number.isInteger(e.points)||e.points<0||e.points>20||!e.snapshot||!short(e.snapshot.title,60)||!categoryIds.has(e.snapshot.category)||!['daily','weekdays','weekly','monthly','once'].includes(e.snapshot.frequency)||!Array.isArray(e.snapshot.days)||!Number.isInteger(e.snapshot.target)||typeof e.snapshot.detail!=='string')fail();}
   for(const r of s.rewards){if(!short(r.id,100)||!short(r.title,60)||!Number.isInteger(r.cost)||r.cost<1||r.cost>9999)fail();}
   for(const r of s.redemptions){if(!short(r.id,100)||!ids.has(r.childId)||!short(r.title,60)||!Number.isInteger(r.cost)||r.cost<1||r.cost>9999||!Number.isFinite(Date.parse(r.at)))fail();}
   for(const [k,v] of Object.entries(s.restDays)){const [child,date]=k.split('/');if(!ids.has(child)||!isDate(date)||typeof v!=='boolean')fail();}
   for(const [k,v] of Object.entries(s.notes)){const [child,week]=k.split('/');if(!ids.has(child)||!isDate(week)||typeof v!=='string'||v.length>1000)fail();}
-  return clone(s);
+  return clone({...s,categories});
 }

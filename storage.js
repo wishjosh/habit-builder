@@ -1,4 +1,4 @@
-import {freshState,validateState,CATEGORIES} from './engine.js';
+import {freshState,validateState,categoryInfo} from './engine.js';
 export const STORE_KEY='habit-builder:state:v1';
 export const BACKUP_KEY='habit-builder:previous:v1';
 export function loadState(storage=localStorage) {
@@ -20,6 +20,6 @@ export function readBackup(text) {const parsed=JSON.parse(text);if(parsed.app!==
 export function toCSV(state,child) {
   const protect=x=>{let s=String(x??'');if(/^[=+@\-\t\r]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';};
   const rows=[['날짜','아이','상위 묶음','책·교재','할 일·분량','완료 기준','별']];
-  for(const e of Object.values(state.entries).filter(e=>!child||e.childId===child).sort((a,b)=>a.date.localeCompare(b.date)))rows.push([e.date,state.children.find(c=>c.id===e.childId)?.name,CATEGORIES[e.snapshot.category].label,e.snapshot.material||'',e.snapshot.title,e.snapshot.detail,e.points]);
+  for(const e of Object.values(state.entries).filter(e=>!child||e.childId===child).sort((a,b)=>a.date.localeCompare(b.date)))rows.push([e.date,state.children.find(c=>c.id===e.childId)?.name,categoryInfo(state,e.snapshot.category).label,e.snapshot.material||'',e.snapshot.title,e.snapshot.detail,e.points]);
   return '\uFEFF'+rows.map(r=>r.map(protect).join(',')).join('\r\n');
 }

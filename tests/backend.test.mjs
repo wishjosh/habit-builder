@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {createHash} from 'node:crypto';
-import {freshState} from '../engine.js';
+import {freshState,saveCategory,saveHabit,markDone,deleteCategory} from '../engine.js';
 function backend(){
  const sheets=new Map();
  const mk=(name)=>{
@@ -31,4 +31,14 @@ test('긴 JSON 분할과 수식 방지, 이전 저장본 보존',()=>{
  assert.ok(sheets.get('State').getDataRange().getValues().slice(1).every(r=>r[0].startsWith('#')));
  ctx.bridge({action:'write',key,revision:1,state:freshState('2026-09-14')});assert.equal(ctx.readSnapshot_(sheets.get('이전 저장')).state.notes.extra,state.notes.extra);
  assert.equal(ctx.bridge({action:'read',key}).state.notes.extra,undefined);
+});
+test('사용자 묶음의 완료 기록과 이동된 할 일을 시트에 보존',()=>{
+ const {ctx,key,sheets}=backend(),state=freshState('2026-09-14');
+ const id=saveCategory(state,null,{label:'=영어',type:'life'});
+ saveHabit(state,'child-1',null,{category:id,title:'단어 읽기',frequency:'daily',points:1},'2026-09-14');
+ markDone(state,'child-1',state.habits.at(-1).id,'2026-09-14');deleteCategory(state,id,'life','2026-09-15');
+ ctx.bridge({action:'write',key,revision:0,state});
+ assert.equal(sheets.get('실천 기록').getDataRange().getValues()[1][2],"'=영어");
+ assert.equal(sheets.get('아이와 활동').getDataRange().getValues().at(-1)[1],'생활 습관');
+ assert.equal(ctx.bridge({action:'read',key}).state.categories.find(c=>c.id===id).archivedFrom,'2026-09-15');
 });

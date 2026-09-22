@@ -50,6 +50,7 @@ function bridge(request){
 function updateViews_(ss,state){
   var names={};state.children.forEach(function(c){names[c.id]=c.name;});
   var categories={reading:'책 읽기',math:'수학',learning:'기타 학습',life:'생활 습관',movement:'몸 움직이기',art:'만들고 표현하기'};
+  (state.categories||[]).forEach(function(c){categories[c.id]=c.label;});
   var records=[['날짜','아이','상위 묶음','책·교재','할 일·분량','완료 기준','별']];
   Object.keys(state.entries).map(function(k){return state.entries[k];}).sort(function(a,b){return a.date.localeCompare(b.date);}).forEach(function(e){records.push([e.date,cell_(names[e.childId]),cell_(categories[e.snapshot.category]),cell_(e.snapshot.material),cell_(e.snapshot.title),cell_(e.snapshot.detail),e.points]);});
   var logs=ss.getSheetByName('실천 기록');logs.clearContents();logs.getRange(1,1,records.length,7).setValues(records);logs.setFrozenRows(1);
