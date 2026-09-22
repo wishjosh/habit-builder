@@ -23,8 +23,8 @@ function authenticate_(key){var expected=PropertiesService.getScriptProperties()
 function spreadsheet_(){var id=PropertiesService.getScriptProperties().getProperty('SHEET_ID');if(!id)throw new Error('먼저 setup 함수를 실행해 주세요.');return SpreadsheetApp.openById(id);}
 function readSnapshot_(sheet){var rows=sheet.getDataRange().getValues();var revision=Number(rows[0][1])||0;var raw=rows.slice(1).map(function(r){return r[0]?String(r[0]).slice(1):'';}).join('');return {revision:revision,state:raw?JSON.parse(raw):null};}
 function validate_(state){
-  if(!state||state.schema!==1||!Array.isArray(state.children)||!state.children.length||state.children.length>8||!Array.isArray(state.habits)||state.habits.length>500||!state.entries||typeof state.entries!=='object'||Array.isArray(state.entries)||!Array.isArray(state.rewards)||!Array.isArray(state.redemptions)||Object.keys(state.entries).length>50000)throw new Error('올바른 기록 형식이 아니에요.');
-  var raw=JSON.stringify(state);if(raw.length>1500000)throw new Error('기록이 너무 커서 저장할 수 없어요. 백업한 뒤 확인해 주세요.');return raw;
+  if(!state||state.schema!==1||!Array.isArray(state.children)||!state.children.length||state.children.length>8||!Array.isArray(state.habits)||state.habits.length>10000||!state.entries||typeof state.entries!=='object'||Array.isArray(state.entries)||!Array.isArray(state.rewards)||!Array.isArray(state.redemptions)||Object.keys(state.entries).length>50000)throw new Error('올바른 기록 형식이 아니에요.');
+  var raw=JSON.stringify(state);if(raw.length>4000000)throw new Error('기록이 너무 커서 저장할 수 없어요. 백업한 뒤 확인해 주세요.');return raw;
 }
 function cell_(value){var s=String(value==null?'':value);return /^[=+@\-\t\r]/.test(s)?"'"+s:s;}
 function bridge(request){
@@ -55,6 +55,7 @@ function updateViews_(ss,state){
   Object.keys(state.entries).map(function(k){return state.entries[k];}).sort(function(a,b){return a.date.localeCompare(b.date);}).forEach(function(e){records.push([e.date,cell_(names[e.childId]),cell_(categories[e.snapshot.category]),cell_(e.snapshot.material),cell_(e.snapshot.title),cell_(e.snapshot.detail),e.points]);});
   var logs=ss.getSheetByName('실천 기록');logs.clearContents();logs.getRange(1,1,records.length,7).setValues(records);logs.setFrozenRows(1);
   var plans=[['아이','상위 묶음','책·교재','할 일·분량','완료 기준','반복','목표 횟수','별']];
+  (state.weeklyPlans||[]).forEach(function(p){var v=p.versions.slice().sort(function(a,b){return b.effectiveFrom.localeCompare(a.effectiveFrom);})[0];if(v.mode==='off')return;var label=v.mode==='daily'?'매일':v.mode==='alternate'?v.anchorDate+'부터 격일':v.days.map(function(d){return '일월화수목금토'[d];}).join(' · ');plans.push([cell_(names[p.childId]),cell_(categories[p.category]),'','주간 묶음 일정','',label,'','']);});
   state.habits.forEach(function(h){if(h.archivedFrom)return;var versions=h.versions.slice().sort(function(a,b){return b.effectiveFrom.localeCompare(a.effectiveFrom);}),v=versions[0];plans.push([cell_(names[h.childId]),cell_(categories[v.category]),cell_(v.material),cell_(v.title),cell_(v.detail),v.frequency,v.target,v.points]);});
   var activities=ss.getSheetByName('아이와 활동');activities.clearContents();activities.getRange(1,1,plans.length,8).setValues(plans);activities.setFrozenRows(1);
 }

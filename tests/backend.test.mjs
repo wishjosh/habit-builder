@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {createHash} from 'node:crypto';
-import {freshState,saveCategory,saveHabit,markDone,deleteCategory} from '../engine.js';
+import {freshState,saveCategory,saveHabit,markDone,deleteCategory,saveWeeklyPlan,saveDailyPlan,today,addDays} from '../engine.js';
 function backend(){
  const sheets=new Map();
  const mk=(name)=>{
@@ -41,4 +41,13 @@ test('사용자 묶음의 완료 기록과 이동된 할 일을 시트에 보존
  assert.equal(sheets.get('실천 기록').getDataRange().getValues()[1][2],"'=영어");
  assert.equal(sheets.get('아이와 활동').getDataRange().getValues().at(-1)[1],'생활 습관');
  assert.equal(ctx.bridge({action:'read',key}).state.categories.find(c=>c.id===id).archivedFrom,'2026-09-15');
+});
+test('주간 묶음 일정과 내일의 세부 계획을 함께 왕복 저장',()=>{
+ const {ctx,key,sheets}=backend(),state=freshState();
+ saveWeeklyPlan(state,'child-1','reading',{mode:'alternate',anchorDate:today()});
+ saveDailyPlan(state,'child-1',null,{category:'reading',material:'어린 왕자',title:'3장까지 읽기'},addDays(today(),1));
+ ctx.bridge({action:'write',key,revision:0,state});
+ assert.deepEqual(JSON.parse(JSON.stringify(ctx.bridge({action:'read',key}).state)),state);
+ const plans=sheets.get('아이와 활동').getDataRange().getValues();
+ assert.equal(plans[1][3],'주간 묶음 일정');assert.match(plans[1][5],/격일/);assert.equal(plans[2][2],'어린 왕자');
 });

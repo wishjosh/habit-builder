@@ -1,6 +1,7 @@
+import {sampleState as freshState} from './fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {freshState,markDone,undoDone,starSummary,redeem,cancelRedemption,saveHabit,habitAt,cardsFor,validateState,weekStart,monthDays,addDays,today,groupRecords,groupByCategory,taskLabel,entriesFor} from '../engine.js';
+import {markDone,undoDone,starSummary,redeem,cancelRedemption,saveHabit,habitAt,cardsFor,validateState,weekStart,monthDays,addDays,today,groupRecords,groupByCategory,taskLabel,entriesFor} from '../engine.js';
 import {loadState,persist,makeBackup,readBackup,toCSV,STORE_KEY,BACKUP_KEY} from '../storage.js';
 const day='2026-09-14';
 test('완료 중복 적립 방지, 아이별 분리, 취소',()=>{

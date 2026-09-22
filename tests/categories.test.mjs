@@ -1,6 +1,7 @@
+import {sampleState as freshState} from './fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {freshState,clone,saveCategory,deleteCategory,categoryInfo,categoryHabits,activeCategories,saveHabit,habitAt,markDone,cardsFor,entriesFor,groupRecords,starSummary,validateState} from '../engine.js';
+import {clone,saveCategory,deleteCategory,categoryInfo,categoryHabits,activeCategories,saveHabit,habitAt,markDone,cardsFor,entriesFor,groupRecords,starSummary,validateState} from '../engine.js';
 import {makeBackup,readBackup,toCSV,loadState,STORE_KEY} from '../storage.js';
 const day='2026-09-14',next='2026-09-15';
 test('직접 만든 묶음에 두 아이의 할 일을 넣고 완료·백업·이름 변경',()=>{
