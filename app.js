@@ -245,7 +245,7 @@ document.addEventListener('click',event=>{
     if(action==='remove-reward'){
       const reward=state.rewards.find(item=>item.id===id);
       if(!reward)throw new Error('목록에서 선물을 찾을 수 없어요.');
-      confirmModal('선물을 목록에서 지울까요?',`‘${esc(reward.title)}’을 앞으로 고를 수 있는 목록에서 지워요. 이미 교환한 내역과 사용한 별은 그대로 남아요.`,'remove-reward-confirm','목록에서 삭제',`data-id="${esc(id)}"`);
+      confirmModal('선물을 목록에서 지울까요?',`선물 ‘${esc(reward.title)}’ 항목을 앞으로 고를 수 있는 목록에서 지워요. 이미 교환한 내역과 사용한 별은 그대로 남아요.`,'remove-reward-confirm','목록에서 삭제',`data-id="${esc(id)}"`);
       return;
     }
     if(action==='remove-reward-confirm'){requireParent();if(commit(s=>removeReward(s,id),'선물을 목록에서 지웠어요. 이전 교환 내역은 남아요.'))dialog.close();return;}
