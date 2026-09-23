@@ -1,4 +1,4 @@
-import {activeCategories,weeklyAt,weeklyDue,weeklyLabel,dailyGroupsFor,today,addDays,weekStart,datesBetween} from './engine.js';
+import {activeCategories,categoryInfo,habitAt,weeklyAt,weeklyDue,weeklyLabel,dailyGroupsFor,taskLabel,frequencyLabel,today,addDays,weekStart,datesBetween} from './engine.js';
 import {icon,esc} from './ui.js';
 import {fold} from './hierarchy.js';
 
@@ -22,3 +22,57 @@ export function dailyScreenGroups(state,child,day,renderCard,button){
 }
 
 export function parentCheck(){return '<label class="parent-check"><input type="checkbox" name="parentConfirmed" required><span>부모님과 함께 확인했어요.</span></label>';}
+
+function nextWeeklyDate(plan,base){
+  const current=weeklyAt(plan,base);
+  if(!current||current.mode==='off')return null;
+  if(current.mode==='alternate'&&current.anchorDate>base)return current.anchorDate;
+  for(let i=0;i<14;i++){const day=addDays(base,i);if(weeklyDue(weeklyAt(plan,day),day))return day;}
+  return null;
+}
+
+function nextHabitDate(version,base){
+  if(version.frequency==='once')return version.dueDate;
+  if(version.frequency==='daily')return base;
+  if(version.frequency==='weekdays'){
+    for(let i=0;i<7;i++){const day=addDays(base,i);if(version.days.includes(new Date(day+'T12:00:00').getDay()))return day;}
+  }
+  return null;
+}
+
+export function plannedItems(state,base=today()){
+  const rows=[];
+  for(const plan of state.weeklyPlans||[]){
+    const category=categoryInfo(state,plan.category),day=nextWeeklyDate(plan,base),version=weeklyAt(plan,base);
+    if(!category||category.archivedFrom||!day||!version||version.mode==='off')continue;
+    rows.push({kind:'weekly',id:plan.id,childId:plan.childId,category:plan.category,title:`${category.label} 일정`,schedule:weeklyLabel(version),nextDate:day});
+  }
+  for(const habit of state.habits){
+    if(habit.archivedFrom&&habit.archivedFrom<=base)continue;
+    const version=habitAt(habit,base)||habit.versions.at(-1);
+    if(!version)continue;
+    if(habit.dailyPlan){
+      if(version.dueDate<base||habit.archivedFrom&&habit.archivedFrom<=version.dueDate)continue;
+      rows.push({kind:'daily',id:habit.id,childId:habit.childId,category:version.category,title:taskLabel(version),schedule:'날짜별 할 일',nextDate:version.dueDate,completed:Object.values(state.entries).some(entry=>entry.habitId===habit.id)});
+    }else{
+      rows.push({kind:'legacy',id:habit.id,childId:habit.childId,category:version.category,title:taskLabel(version),schedule:frequencyLabel(version),nextDate:nextHabitDate(version,base)});
+    }
+  }
+  return rows;
+}
+
+export function taskManagerScreen(state,view,filter,button,base=today()){
+  const all=plannedItems(state,base),items=filter==='all'?all:all.filter(item=>item.childId===filter);
+  const categoryOrder=new Map(activeCategories(state).map((category,index)=>[category.id,index]));
+  const key=item=>view==='date'?(item.nextDate?(item.nextDate<base?'past':item.nextDate):'flexible'):item.category;
+  const keys=[...new Set(items.map(key))].sort((a,b)=>view==='date'?
+    (a==='flexible'||a==='past'?1:0)-(b==='flexible'||b==='past'?1:0)||
+    (a==='past'?1:0)-(b==='past'?1:0)||a.localeCompare(b):
+    (categoryOrder.get(a)??999)-(categoryOrder.get(b)??999));
+  const label=group=>view==='category'?categoryInfo(state,group)?.label||'지난 묶음':group==='flexible'?'날짜를 정하지 않은 반복':group==='past'?'지난 날짜의 할 일':`${Number(group.slice(5,7))}월 ${Number(group.slice(8))}일 ${['일','월','화','수','목','금','토'][new Date(group+'T12:00:00').getDay()]}요일`;
+  const row=item=>{
+    const person=state.children.find(child=>child.id===item.childId),category=categoryInfo(state,item.category),attrs=`data-kind="${item.kind}" data-id="${esc(item.id)}" data-child="${esc(item.childId)}" data-category="${esc(item.category)}"${item.nextDate?` data-day="${item.nextDate}"`:''}`;
+    return `<div class="task-manager-row"><span class="activity-icon ${category?.color||'mint'}">${icon(category?.icon||'leaf')}</span><div class="grow"><strong>${esc(item.title)}</strong><p>${esc(person?.name||'아이')} · ${item.kind==='weekly'?'주간 일정':item.kind==='daily'?'날짜별 할 일':'이전에 만든 할 일'} · ${esc(item.schedule)}${view==='category'&&item.nextDate?` · ${item.nextDate<base?'지난 날짜':`${Number(item.nextDate.slice(5,7))}/${Number(item.nextDate.slice(8))} 다음 예정`}`:''}</p>${item.completed?'<small>완료를 취소한 뒤 수정·삭제할 수 있어요.</small>':''}</div><div class="task-manager-actions">${item.completed?button('manager-open-day','날짜 보기','text-btn',attrs):button('manager-edit','수정','text-btn',attrs)+button('manager-delete','삭제','text-btn',attrs)}</div></div>`;
+  };
+  return `<section class="panel task-manager"><div class="section-head"><div><h2>할 일 목록 관리</h2><p>두 아이의 계획 ${all.length}개를 한곳에서 살펴봐요.</p></div>${button('manager-add',`${icon('plus')}할 일 추가`,'primary')}</div><div class="task-manager-controls"><div class="tabbar" aria-label="목록 보기 방식">${[['date','날짜별'],['category','상위 묶음별']].map(([id,name])=>button('manager-view',name,view===id?'active':'',`data-view="${id}" aria-pressed="${view===id}"`)).join('')}</div><div class="tabbar" aria-label="아이별 목록">${[['all','모두'],...state.children.map(child=>[child.id,child.name])].map(([id,name])=>button('manager-filter',esc(name),filter===id?'active':'',`data-child="${esc(id)}" aria-pressed="${filter===id}"`)).join('')}</div></div><p class="manager-hint">날짜별 보기에서는 반복 일정도 다음 예정일에 한 번씩 표시해요. 날짜가 정해지지 않은 반복은 아래에 모아요.</p>${keys.length?keys.map(group=>`<div class="task-manager-group"><h3>${esc(label(group))} <small>${items.filter(item=>key(item)===group).length}개</small></h3>${items.filter(item=>key(item)===group).sort((a,b)=>a.childId.localeCompare(b.childId)||a.title.localeCompare(b.title,'ko')).map(row).join('')}</div>`).join(''):'<div class="empty">계획한 할 일이 없어요. 위에서 새 할 일을 추가해 보세요.</div>'}</section>`;
+}

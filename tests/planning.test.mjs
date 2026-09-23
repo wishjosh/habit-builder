@@ -1,9 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {freshState,today,addDays,clone,saveWeeklyPlan,weeklyAt,weeklyDue,dailyGroupsFor,saveDailyPlan,removeDailyPlan,markDone,undoDone,starSummary,entriesFor,groupRecords,recentMaterials,historyHabits,validateState,deleteCategory,cardsFor} from '../engine.js';
+import {freshState,today,addDays,clone,saveWeeklyPlan,weeklyAt,weeklyDue,dailyGroupsFor,saveDailyPlan,removeDailyPlan,markDone,undoDone,starSummary,entriesFor,groupRecords,recentMaterials,historyHabits,validateState,deleteCategory,cardsFor,saveHabit} from '../engine.js';
 import {makeBackup,readBackup} from '../storage.js';
+import {plannedItems,taskManagerScreen} from '../planner-ui.js';
 import {sampleState} from './fixtures.mjs';
 const day=today(),tomorrow=addDays(day,1),child='child-1';
+test('설정 목록은 두 아이의 주간·날짜별·기존 반복 계획을 함께 모으고 아이별로 거른다',()=>{
+ const s=freshState(day);
+ saveWeeklyPlan(s,'child-1','reading',{mode:'daily'});
+ const dailyId=saveDailyPlan(s,'child-2',null,{category:'math',material:'눈높이 A1',title:'2쪽 풀기'},tomorrow);
+ saveHabit(s,'child-1',null,{category:'life',title:'정리하기',frequency:'weekly',target:3,points:1});
+ const rows=plannedItems(s,day);
+ assert.deepEqual(new Set(rows.map(row=>row.kind)),new Set(['weekly','daily','legacy']));
+ assert.equal(rows.find(row=>row.id===dailyId).childId,'child-2');
+ assert.equal(rows.find(row=>row.id===dailyId).nextDate,tomorrow);
+ const button=(action,label,cls='',attrs='')=>`<button data-action="${action}" ${attrs}>${label}</button>`;
+ const byDate=taskManagerScreen(s,'date','child-2',button,day);
+ assert.match(byDate,/눈높이 A1/);assert.doesNotMatch(byDate,/정리하기/);
+ assert.match(byDate,/data-action="manager-edit"/);
+ const byCategory=taskManagerScreen(s,'category','all',button,day);
+ assert.match(byCategory,/상위 묶음별/);assert.match(byCategory,/정리하기/);
+});
 test('묶음 일정만 정하면 빈 세부 계획 칸이 나오고, 아이별로 분리',()=>{
  const s=freshState(day);assert.equal(s.habits.length,0);
  saveWeeklyPlan(s,child,'reading',{mode:'daily'});
