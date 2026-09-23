@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {freshState,today,addDays,clone,saveWeeklyPlan,weeklyAt,weeklyDue,dailyGroupsFor,saveDailyPlan,removeDailyPlan,markDone,undoDone,starSummary,entriesFor,groupRecords,recentMaterials,historyHabits,validateState,deleteCategory,cardsFor,saveHabit} from '../engine.js';
-import {makeBackup,readBackup} from '../storage.js';
-import {plannedItems,taskManagerScreen} from '../planner-ui.js';
+import {freshState,today,addDays,clone,saveWeeklyPlan,weeklyAt,weeklyDue,dailyGroupsFor,saveDailyPlan,removeDailyPlan,markDone,undoDone,starSummary,entriesFor,groupRecords,recentMaterials,historyHabits,missedPlansFor,stopHabit,eraseHabit,redeem,validateState,deleteCategory,cardsFor,saveHabit} from '../engine.js';
+import {makeBackup,readBackup,persist,STORE_KEY,BACKUP_KEY} from '../storage.js';
+import {plannedItems,pastItems,taskManagerScreen} from '../planner-ui.js';
 import {sampleState} from './fixtures.mjs';
 const day=today(),tomorrow=addDays(day,1),child='child-1';
 test('설정 목록은 두 아이의 주간·날짜별·기존 반복 계획을 함께 모으고 아이별로 거른다',()=>{
@@ -87,4 +87,69 @@ test('잘못된 일정·다른 아이·잘못된 날짜의 세부 계획을 거�
  saveWeeklyPlan(s,child,'reading',{mode:'daily'});
  const duplicate=clone(s);duplicate.weeklyPlans.push({...clone(s.weeklyPlans[0]),id:'other'});assert.throws(()=>validateState(duplicate));
  s.weeklyPlans[0].childId='missing';assert.throws(()=>validateState(s));
+});
+
+test('지난 할 일은 완료·미실행·취소를 구분하고 주간 묶음만으로 미실행을 만들지 않는다',()=>{
+ const s=freshState(day),base=addDays(day,2);
+ saveWeeklyPlan(s,child,'reading',{mode:'daily'});
+ const missed=saveDailyPlan(s,child,null,{category:'reading',material:'실제 계획한 책',title:'1장 읽기'},day);
+ const cancelled=saveDailyPlan(s,child,null,{category:'life',title:'잘못 정한 계획'},tomorrow);
+ stopHabit(s,cancelled,true,day);
+ assert.deepEqual(missedPlansFor(s,child,day,base).map(item=>item.habit.id),[missed]);
+ assert.deepEqual(missedPlansFor(s,child,tomorrow,base),[]);
+ const past=pastItems(s,base);
+ assert.equal(past.find(item=>item.id===missed).status,'미실행');
+ assert.equal(past.find(item=>item.id===cancelled).status,'취소');
+ assert.equal(past.some(item=>item.kind==='weekly'),false);
+ assert.equal(plannedItems(s,base).some(item=>item.id===missed),false);
+ s.restDays[`${child}/${day}`]=true;
+ assert.deepEqual(missedPlansFor(s,child,day,base),[]);
+ assert.equal(pastItems(s,base).find(item=>item.id===missed).status,'쉬는 날');
+ delete s.restDays[`${child}/${day}`];
+ const button=(action,label,cls='',attrs='')=>`<button data-action="${action}" ${attrs}>${label}</button>`;
+ const html=taskManagerScreen(s,'date','all',button,base,'past');
+ assert.match(html,/지난 할 일/);assert.match(html,/미실행/);assert.match(html,/취소/);
+ assert.match(html,/data-action="manager-manage"/);
+});
+
+test('중단은 실천과 별을 남기고 잘못 만든 항목 삭제는 실천·별만 없앤다',()=>{
+ const s=freshState(day),id=saveDailyPlan(s,child,null,{category:'reading',material:'시험 책',title:'1장 읽기'},day);
+ markDone(s,child,id,day);
+ s.rewards.push({id:'test-reward',title:'시험 선물',cost:1,icon:'gift'});
+ redeem(s,child,'test-reward');
+ assert.throws(()=>stopHabit(s,id));
+ stopHabit(s,id,true);
+ assert.equal(historyHabits(s,child).length,1);
+ assert.equal(starSummary(s,child).balance,0);
+ assert.equal(pastItems(s).find(item=>item.id===id).status,'완료');
+ assert.throws(()=>eraseHabit(s,id));
+ assert.deepEqual(eraseHabit(s,id,true),{entries:1,points:1});
+ assert.equal(historyHabits(s,child).length,0);
+ assert.equal(entriesFor(s,child).length,0);
+ assert.equal(starSummary(s,child).balance,-1);
+ assert.equal(s.redemptions.length,1);
+ assert.deepEqual(recentMaterials(s,child,'reading'),[]);
+ validateState(s);
+});
+
+test('실천 0번의 지난 시험 항목은 발자국에 보이지 않고 기록에서 지울 수 있다',()=>{
+ const s=freshState(day);
+ saveHabit(s,child,null,{category:'life',title:'시험 반복',frequency:'daily',points:1});
+ const id=s.habits.at(-1).id;
+ stopHabit(s,id,true);
+ assert.equal(historyHabits(s,child).length,0);
+ assert.equal(pastItems(s).find(item=>item.id===id).status,'중단');
+ eraseHabit(s,id,true);
+ assert.equal(pastItems(s).length,0);
+ validateState(s);
+});
+
+test('완전히 지울 때 기기의 이전 저장본에서도 시험 항목을 제거한다',()=>{
+ const values=new Map(),storage={getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)};
+ const s=freshState(day),id=saveDailyPlan(s,child,null,{category:'life',title:'시험 계획'},day);
+ persist(s,storage);
+ const next=clone(s);eraseHabit(next,id,true);
+ persist(next,storage,{keepPrevious:false});
+ assert.equal(values.has(BACKUP_KEY),false);
+ assert.equal(JSON.parse(values.get(STORE_KEY)).habits.length,0);
 });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {createHash} from 'node:crypto';
-import {freshState,saveCategory,saveHabit,markDone,deleteCategory,saveWeeklyPlan,saveDailyPlan,today,addDays} from '../engine.js';
+import {freshState,saveCategory,saveHabit,markDone,deleteCategory,saveWeeklyPlan,saveDailyPlan,eraseHabit,today,addDays} from '../engine.js';
 function backend(){
  const sheets=new Map();
  const mk=(name)=>{
@@ -50,4 +50,16 @@ test('주간 묶음 일정과 내일의 세부 계획을 함께 왕복 저장',(
  assert.deepEqual(JSON.parse(JSON.stringify(ctx.bridge({action:'read',key}).state)),state);
  const plans=sheets.get('아이와 활동').getDataRange().getValues();
  assert.equal(plans[1][3],'주간 묶음 일정');assert.match(plans[1][5],/격일/);assert.equal(plans[2][2],'어린 왕자');
+});
+test('잘못 만든 할 일을 지운 상태는 시트의 현재 기록과 실천 표에서 사라진다',()=>{
+ const {ctx,key,sheets}=backend(),state=freshState();
+ const id=saveDailyPlan(state,'child-1',null,{category:'life',title:'시험 계획'},today());
+ markDone(state,'child-1',id,today());
+ ctx.bridge({action:'write',key,revision:0,state});
+ eraseHabit(state,id,true);
+ ctx.bridge({action:'write',key,revision:1,state});
+ assert.equal(ctx.bridge({action:'read',key}).state.habits.length,0);
+ assert.equal(ctx.bridge({action:'read',key}).state.entries[`child-1/${id}/${today()}`],undefined);
+ assert.equal(sheets.get('실천 기록').getDataRange().getValues().length,1);
+ assert.equal(ctx.readSnapshot_(sheets.get('이전 저장')).state.habits.length,1);
 });

@@ -127,7 +127,29 @@ export function recentMaterials(state,child,category){
   const rows=state.habits.filter(h=>h.childId===child&&(!h.archivedFrom||recorded.has(h.id))).flatMap(h=>h.versions).filter(v=>v.category===category&&v.material).sort((a,b)=>b.effectiveFrom.localeCompare(a.effectiveFrom));
   return [...new Set(rows.map(v=>v.material))].slice(0,8);
 }
-export function historyHabits(state,child){const recorded=new Set(entriesFor(state,child).map(e=>e.habitId));return state.habits.filter(h=>h.childId===child&&(!h.dailyPlan||!h.archivedFrom||recorded.has(h.id)));}
+export function historyHabits(state,child){const recorded=new Set(entriesFor(state,child).map(e=>e.habitId));return state.habits.filter(h=>h.childId===child&&recorded.has(h.id));}
+export function missedPlansFor(state,child,date,base=today()){
+  if(date>=base||state.restDays[`${child}/${date}`])return [];
+  return state.habits.filter(h=>h.childId===child).flatMap(h=>{
+    const v=h.versions.find(v=>v.frequency==='once'&&v.dueDate===date);
+    return v&&(!h.archivedFrom||h.archivedFrom>date)&&!state.entries[entryKey(child,h.id,date)]?[{habit:h,config:v}]:[];
+  });
+}
+export function stopHabit(state,id,parentConfirmed=false,date=today()){
+  if(!parentConfirmed)throw new Error('부모님과 함께 확인해 주세요.');
+  const h=state.habits.find(h=>h.id===id);
+  if(!h||h.archivedFrom&&h.archivedFrom<=date)throw new Error('현재 할 일을 찾을 수 없어요.');
+  h.archivedFrom=date;touch(state);
+}
+export function eraseHabit(state,id,parentConfirmed=false){
+  if(!parentConfirmed)throw new Error('부모님과 함께 확인해 주세요.');
+  const index=state.habits.findIndex(h=>h.id===id);
+  if(index<0)throw new Error('할 일을 찾을 수 없어요.');
+  let entries=0,points=0;
+  for(const [key,entry] of Object.entries(state.entries))if(entry.habitId===id){entries++;points+=entry.points;delete state.entries[key];}
+  state.habits.splice(index,1);touch(state);
+  return {entries,points};
+}
 export function scheduled(v,date) { if(!v) return false; if(v.frequency==='weekdays') return v.days.includes(dateObj(date).getDay()); if(v.frequency==='once') return date===v.dueDate; return true; }
 export function entryKey(child,habit,date) { return `${child}/${habit}/${date}`; }
 export function entriesFor(state,child,start='0000-00-00',end='9999-99-99') { return Object.values(state.entries).filter(e=>e.childId===child && e.date>=start && e.date<=end); }

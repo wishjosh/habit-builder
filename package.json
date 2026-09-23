@@ -1,6 +1,6 @@
 {
   "name": "habit-builder",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "private": true,
   "type": "module",
   "description": "습관 형성 시스템 — 작은 실천을 함께 쌓는 가족용 앱",

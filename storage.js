@@ -8,11 +8,12 @@ export function loadState(storage=localStorage) {
   try{return {state:validateState(JSON.parse(raw)),writable:true};}
   catch{return {state:null,warning:'저장된 기록을 읽을 수 없어요. 기존 기록은 지우지 않았어요.',raw,writable:false};}
 }
-export function persist(state,storage=localStorage) {
+export function persist(state,storage=localStorage,{keepPrevious=true}={}) {
   const valid=validateState(state);
   const old=storage.getItem(STORE_KEY);
-  if(old)storage.setItem(BACKUP_KEY,old);
+  if(old&&keepPrevious)storage.setItem(BACKUP_KEY,old);
   storage.setItem(STORE_KEY,JSON.stringify(valid));
+  if(!keepPrevious)storage.removeItem(BACKUP_KEY);
   return valid;
 }
 export function makeBackup(state) {return JSON.stringify({app:'habit-builder',version:1,exportedAt:new Date().toISOString(),state},null,2);}

@@ -55,24 +55,44 @@ export function plannedItems(state,base=today()){
       if(version.dueDate<base||habit.archivedFrom&&habit.archivedFrom<=version.dueDate)continue;
       rows.push({kind:'daily',id:habit.id,childId:habit.childId,category:version.category,title:taskLabel(version),schedule:'날짜별 할 일',nextDate:version.dueDate,completed:Object.values(state.entries).some(entry=>entry.habitId===habit.id)});
     }else{
+      if(version.frequency==='once'&&version.dueDate<base)continue;
       rows.push({kind:'legacy',id:habit.id,childId:habit.childId,category:version.category,title:taskLabel(version),schedule:frequencyLabel(version),nextDate:nextHabitDate(version,base)});
     }
   }
   return rows;
 }
 
-export function taskManagerScreen(state,view,filter,button,base=today()){
-  const all=plannedItems(state,base),items=filter==='all'?all:all.filter(item=>item.childId===filter);
+export function pastItems(state,base=today()){
+  const rows=[],entries=Object.values(state.entries);
+  for(const habit of state.habits){
+    const version=habit.versions.at(-1),recorded=entries.filter(entry=>entry.habitId===habit.id).sort((a,b)=>b.date.localeCompare(a.date));
+    if(!version)continue;
+    const once=version.frequency==='once';
+    if(once){
+      const due=version.dueDate;
+      if(due>=base&&!recorded.length&&(!habit.archivedFrom||habit.archivedFrom>base))continue;
+      const completed=recorded.length>0,rest=state.restDays[`${habit.childId}/${due}`],missed=!completed&&!rest&&due<base&&(!habit.archivedFrom||habit.archivedFrom>due);
+      rows.push({kind:habit.dailyPlan?'daily':'legacy',id:habit.id,childId:habit.childId,category:recorded[0]?.snapshot.category||version.category,title:taskLabel(recorded[0]?.snapshot||version),schedule:'날짜별 할 일',nextDate:due,status:completed?'완료':rest?'쉬는 날':missed?'미실행':'취소',completed});
+    }else if(habit.archivedFrom&&habit.archivedFrom<=base||recorded.length){
+      rows.push({kind:'legacy',id:habit.id,childId:habit.childId,category:recorded[0]?.snapshot.category||version.category,title:taskLabel(recorded[0]?.snapshot||version),schedule:frequencyLabel(version),nextDate:recorded[0]?.date||habit.archivedFrom,status:recorded.length?`${recorded.length}번 실천${habit.archivedFrom?' · 중단':''}`:'중단',completed:recorded.length>0});
+    }
+  }
+  return rows;
+}
+
+export function taskManagerScreen(state,view,filter,button,base=today(),scope='current'){
+  const all=scope==='past'?pastItems(state,base):plannedItems(state,base),items=filter==='all'?all:all.filter(item=>item.childId===filter);
   const categoryOrder=new Map(activeCategories(state).map((category,index)=>[category.id,index]));
-  const key=item=>view==='date'?(item.nextDate?(item.nextDate<base?'past':item.nextDate):'flexible'):item.category;
-  const keys=[...new Set(items.map(key))].sort((a,b)=>view==='date'?
+  const key=item=>view==='date'?(item.nextDate?(scope==='past'?item.nextDate:item.nextDate<base?'past':item.nextDate):'flexible'):item.category;
+  const keys=[...new Set(items.map(key))].sort((a,b)=>view==='date'&&scope==='past'?b.localeCompare(a):view==='date'?
     (a==='flexible'||a==='past'?1:0)-(b==='flexible'||b==='past'?1:0)||
     (a==='past'?1:0)-(b==='past'?1:0)||a.localeCompare(b):
     (categoryOrder.get(a)??999)-(categoryOrder.get(b)??999));
   const label=group=>view==='category'?categoryInfo(state,group)?.label||'지난 묶음':group==='flexible'?'날짜를 정하지 않은 반복':group==='past'?'지난 날짜의 할 일':`${Number(group.slice(5,7))}월 ${Number(group.slice(8))}일 ${['일','월','화','수','목','금','토'][new Date(group+'T12:00:00').getDay()]}요일`;
   const row=item=>{
     const person=state.children.find(child=>child.id===item.childId),category=categoryInfo(state,item.category),attrs=`data-kind="${item.kind}" data-id="${esc(item.id)}" data-child="${esc(item.childId)}" data-category="${esc(item.category)}"${item.nextDate?` data-day="${item.nextDate}"`:''}`;
-    return `<div class="task-manager-row"><span class="activity-icon ${category?.color||'mint'}">${icon(category?.icon||'leaf')}</span><div class="grow"><strong>${esc(item.title)}</strong><p>${esc(person?.name||'아이')} · ${item.kind==='weekly'?'주간 일정':item.kind==='daily'?'날짜별 할 일':'이전에 만든 할 일'} · ${esc(item.schedule)}${view==='category'&&item.nextDate?` · ${item.nextDate<base?'지난 날짜':`${Number(item.nextDate.slice(5,7))}/${Number(item.nextDate.slice(8))} 다음 예정`}`:''}</p>${item.completed?'<small>완료를 취소한 뒤 수정·삭제할 수 있어요.</small>':''}</div><div class="task-manager-actions">${item.completed?button('manager-open-day','날짜 보기','text-btn',attrs):button('manager-edit','수정','text-btn',attrs)+button('manager-delete','삭제','text-btn',attrs)}</div></div>`;
+    const actions=scope==='past'?`${item.nextDate&&item.completed?button('manager-open-day','기록 보기','text-btn',attrs):''}${button('manager-manage','정리','text-btn',attrs)}`:item.kind==='weekly'?button('manager-edit','수정','text-btn',attrs)+button('manager-delete','일정 삭제','text-btn',attrs):`${item.completed?button('manager-open-day','날짜 보기','text-btn',attrs):button('manager-edit','수정','text-btn',attrs)}${button('manager-manage','정리','text-btn',attrs)}`;
+    return `<div class="task-manager-row"><span class="activity-icon ${category?.color||'mint'}">${icon(category?.icon||'leaf')}</span><div class="grow"><strong>${esc(item.title)}</strong><p>${esc(person?.name||'아이')} · ${item.kind==='weekly'?'주간 일정':item.kind==='daily'?'날짜별 할 일':'이전에 만든 할 일'} · ${esc(item.schedule)}${view==='category'&&item.nextDate?` · ${Number(item.nextDate.slice(5,7))}/${Number(item.nextDate.slice(8))}`:''}</p>${item.status?`<span class="task-status">${esc(item.status)}</span>`:''}</div><div class="task-manager-actions">${actions}</div></div>`;
   };
-  return `<section class="panel task-manager"><div class="section-head"><div><h2>할 일 목록 관리</h2><p>보이는 계획 ${items.length}개를 한곳에서 살펴봐요.</p></div>${button('manager-add',`${icon('plus')}할 일 추가`,'primary')}</div><div class="task-manager-controls"><div class="tabbar" aria-label="목록 보기 방식">${[['date','날짜별'],['category','상위 묶음별']].map(([id,name])=>button('manager-view',name,view===id?'active':'',`data-view="${id}" aria-pressed="${view===id}"`)).join('')}</div><div class="tabbar" aria-label="아이별 목록">${[['all','모두'],...state.children.map(child=>[child.id,child.name])].map(([id,name])=>button('manager-filter',esc(name),filter===id?'active':'',`data-child="${esc(id)}" aria-pressed="${filter===id}"`)).join('')}</div></div><p class="manager-hint">날짜별 보기에서는 반복 일정도 다음 예정일에 한 번씩 표시해요. 날짜가 정해지지 않은 반복은 아래에 모아요.</p>${keys.length?keys.map(group=>`<div class="task-manager-group"><h3>${esc(label(group))} <small>${items.filter(item=>key(item)===group).length}개</small></h3>${items.filter(item=>key(item)===group).sort((a,b)=>a.childId.localeCompare(b.childId)||a.title.localeCompare(b.title,'ko')).map(row).join('')}</div>`).join(''):'<div class="empty">계획한 할 일이 없어요. 위에서 새 할 일을 추가해 보세요.</div>'}</section>`;
+  return `<section class="panel task-manager"><div class="section-head"><div><h2>할 일 목록 관리</h2><p>${scope==='past'?'지난 계획':'현재 계획'} ${items.length}개를 살펴봐요.</p></div>${scope==='current'?button('manager-add',`${icon('plus')}할 일 추가`,'primary'):''}</div><div class="tabbar manager-scope" aria-label="할 일 범위">${[['current','현재 할 일'],['past','지난 할 일']].map(([id,name])=>button('manager-scope',name,scope===id?'active':'',`data-scope="${id}" aria-pressed="${scope===id}"`)).join('')}</div><div class="task-manager-controls"><div class="tabbar" aria-label="목록 보기 방식">${[['date','날짜별'],['category','상위 묶음별']].map(([id,name])=>button('manager-view',name,view===id?'active':'',`data-view="${id}" aria-pressed="${view===id}"`)).join('')}</div><div class="tabbar" aria-label="아이별 목록">${[['all','모두'],...state.children.map(child=>[child.id,child.name])].map(([id,name])=>button('manager-filter',esc(name),filter===id?'active':'',`data-child="${esc(id)}" aria-pressed="${filter===id}"`)).join('')}</div></div><p class="manager-hint">${scope==='past'?'날짜와 결과를 확인하고, 잘못 만든 항목은 부모님과 함께 기록에서 지울 수 있어요.':'반복 일정은 다음 예정일에 한 번 표시해요. 완료한 오늘 할 일도 여기 남아요.'}</p>${keys.length?keys.map(group=>`<div class="task-manager-group"><h3>${esc(label(group))} <small>${items.filter(item=>key(item)===group).length}개</small></h3>${items.filter(item=>key(item)===group).sort((a,b)=>a.childId.localeCompare(b.childId)||a.title.localeCompare(b.title,'ko')).map(row).join('')}</div>`).join(''):`<div class="empty">${scope==='past'?'지난 할 일이 없어요.':'계획한 할 일이 없어요. 위에서 새 할 일을 추가해 보세요.'}</div>`}</section>`;
 }
