@@ -115,7 +115,7 @@ function renderDailyFields(category){
   dialog.querySelector('#recent-material-buttons').innerHTML=recent.slice(0,2).map(title=>btn('recent-material',esc(title),'text-btn',`data-material="${esc(title)}"`)).join('');
 }
 function commit(change,message){
-  try{const next=clone(state);change(next);touch(next);const saved=persist(next);state=saved;generation++;lastSaved=new Date();if(cloudConfig?.enabled){cloudConfig.dirty=true;saveCloudConfig(cloudConfig);}render();if(message)toast(message);scheduleSync();return true;}
+  try{const next=clone(state);change(next);touch(next);const saved=persist(next);state=saved;generation++;lastSaved=new Date();if(cloudConfig?.enabled){cloudConfig.dirty=true;cloudMessage='';saveCloudConfig(cloudConfig);}render();if(message)toast(message);scheduleSync();return true;}
   catch(error){const message=error.name==='QuotaExceededError'?'저장 공간이 부족해 기록하지 못했어요. 먼저 백업해 주세요.':error.message||'저장하지 못했어요. 다시 시도해 주세요.';const target=dialog.open&&dialog.querySelector('.form-error');if(target)target.textContent=message;else toast(message);return false;}
 }
 function modal(title,body,actions=''){dialog.innerHTML=`<div class="dialog-inner"><div class="dialog-head"><h2 id="dialog-title">${title}</h2>${btn('close',icon('close'),'icon-btn','aria-label="닫기"')}</div>${body}${actions?`<div class="dialog-actions">${actions}</div>`:''}</div>`;if(!dialog.open)dialog.showModal();}
@@ -216,7 +216,7 @@ document.addEventListener('click',event=>{
     if(action==='export'){exportBackup();return;}
     if(action==='csv'){download(toCSV(state),`habit-builder-records-${today()}.csv`,'text/csv;charset=utf-8');return;}
     if(action==='import'){document.querySelector('#import-file').click();return;}
-    if(action==='import-confirm'){if(state)exportBackup();const next=pendingImport;if(!next)return;try{persist(next);state=next;loaded.warning=null;childId=state.children[0].id;generation++;lastSaved=new Date();if(cloudConfig?.enabled){cloudConfig.dirty=true;saveCloudConfig(cloudConfig);}pendingImport=null;dialog.close();render();scheduleSync();toast('백업 기록을 가져왔어요.');}catch(e){toast(e.message);}return;}
+    if(action==='import-confirm'){if(state)exportBackup();const next=pendingImport;if(!next)return;try{persist(next);state=next;loaded.warning=null;childId=state.children[0].id;generation++;lastSaved=new Date();if(cloudConfig?.enabled){cloudConfig.dirty=true;cloudMessage='';saveCloudConfig(cloudConfig);}pendingImport=null;dialog.close();render();scheduleSync();toast('백업 기록을 가져왔어요.');}catch(e){toast(e.message);}return;}
     if(action==='recover'){const raw=localStorage.getItem(BACKUP_KEY);if(!raw)throw new Error('이전 저장본이 없어요. 백업 파일을 불러와 주세요.');const recovered=validateState(JSON.parse(raw));localStorage.setItem(STORE_KEY,JSON.stringify(recovered));state=recovered;childId=state.children[0].id;loaded.warning=null;render();toast('이전 저장본을 복구했어요.');return;}
     if(action==='raw-export'){download(loaded.raw||'',`habit-builder-recovery-${today()}.txt`,'text/plain');return;}
     if(action==='connect'){connectDialog();return;}
@@ -254,7 +254,7 @@ document.addEventListener('submit',async event=>{
   }catch(error){const target=form.querySelector('.form-error');if(target)target.textContent=error.message;else toast(error.message);}
   finally{const button=form.querySelector('[type="submit"]');if(button)button.disabled=false;}
 });
-window.addEventListener('storage',event=>{if(event.key===STORE_KEY&&event.newValue){try{state=validateState(JSON.parse(event.newValue));cloudConfig=readCloudConfig();generation++;render();toast('다른 창에서 바뀐 기록을 반영했어요.');}catch{toast('다른 창의 기록을 확인하지 못했어요.');}}});
+window.addEventListener('storage',event=>{if(event.key===STORE_KEY&&event.newValue){try{state=validateState(JSON.parse(event.newValue));cloudConfig=readCloudConfig();cloudMessage='';generation++;render();toast('다른 창에서 바뀐 기록을 반영했어요.');}catch{toast('다른 창의 기록을 확인하지 못했어요.');}}});
 window.addEventListener('online',()=>syncCloud());
 setInterval(()=>{if(document.visibilityState==='visible'&&state)syncCloud();},30000);
 dialog.addEventListener('close',()=>{if(pendingRemote){pendingRemote.bridge.close();pendingRemote=null;setCloudMessage('');}});
