@@ -18,7 +18,7 @@ export function parentGroups(habits,child,button,state){
   return activeCategories(state).map(cat=>{
     const id=cat.id;
     const items=habits.filter(h=>(habitAt(h,today())||h.versions.at(-1)).category===id);
-    const list=items.map(h=>{const v=habitAt(h,today())||h.versions.at(-1);return `<div class="settings-item"><div class="grow"><strong>${esc(taskLabel(v))}</strong><p>${frequencyLabel(v)} · 별 ${v.points}개<br>${esc(v.detail)}</p></div>${button('edit-habit','수정','text-btn',`data-id="${esc(h.id)}"`)}${button('archive-habit','그만하기','text-btn',`data-id="${esc(h.id)}"`)}</div>`;}).join('');
+    const list=items.map(h=>{const v=habitAt(h,today())||h.versions.at(-1);return `<div class="settings-item"><div class="grow"><strong>${esc(taskLabel(v))}</strong><p>${frequencyLabel(v)} · 별 ${v.points}개<br>${esc(v.detail)}</p></div>${button('edit-habit','수정','text-btn',`data-id="${esc(h.id)}"`)}${button('archive-habit','삭제','text-btn',`data-id="${esc(h.id)}" aria-label="${esc(taskLabel(v))} 할 일 삭제"`)}</div>`;}).join('');
     return fold(`parent/${child}/${id}`,`${icon(cat.icon)}${esc(cat.label)}`,`${items.length}개 할 일`,`${list||'<p>이 묶음에 구체적인 할 일을 넣어 주세요.</p>'}<div class="group-add">${button('add-habit',`${icon('plus')}${esc(cat.label)} 할 일 추가`,'text-btn',`data-category="${esc(id)}"`)}</div>`,items.length>0);
   }).join('');
 }

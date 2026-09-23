@@ -204,8 +204,8 @@ document.addEventListener('click',event=>{
     if(action==='delete-category'){categoryDeleteDialog(id);return;}
     if(action==='add-habit'){dailyEditor(null,el.dataset.category);return;}
     if(action==='edit-habit'){habitEditor(id,el.dataset.category);return;}
-    if(action==='archive-habit'){const h=state.habits.find(h=>h.id===id);confirmModal('이 활동을 그만할까요?',`‘${esc(habitAt(h,today())?.title||h.versions.at(-1).title)}’을 앞으로의 약속에서 빼요. 이미 남긴 기록과 별은 보관해요.`,'archive-confirm','그만하기',`data-id="${esc(id)}"`);return;}
-    if(action==='archive-confirm'){requireParent();if(commit(s=>{s.habits.find(h=>h.id===id).archivedFrom=today();},'지난 실천은 그대로 보관했어요.'))dialog.close();return;}
+    if(action==='archive-habit'){const h=state.habits.find(h=>h.id===id);confirmModal('이 할 일을 삭제할까요?',`‘${esc(taskLabel(habitAt(h,today())||h.versions.at(-1)))}’을 오늘부터 할 일 목록에서 빼요. 이미 남긴 완료 기록과 별은 보관해요.`,'archive-confirm','할 일 삭제',`data-id="${esc(id)}"`);return;}
+    if(action==='archive-confirm'){requireParent();if(commit(s=>{s.habits.find(h=>h.id===id).archivedFrom=today();},'할 일을 목록에서 지웠어요. 지난 기록은 남아요.'))dialog.close();return;}
     if(action==='edit-child'){childEditor(id);return;}
     if(action==='avatar'){selectedAvatar=el.dataset.avatar;dialog.querySelectorAll('[data-action="avatar"]').forEach(b=>{b.classList.toggle('active',b.dataset.avatar===selectedAvatar);b.setAttribute('aria-pressed',String(b.dataset.avatar===selectedAvatar));});return;}
     if(action==='add-reward'||action==='edit-reward'){rewardEditor(id);return;}
