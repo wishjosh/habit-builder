@@ -1,7 +1,7 @@
 import {sampleState as freshState} from './fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {markDone,undoDone,starSummary,redeem,cancelRedemption,saveHabit,habitAt,cardsFor,validateState,weekStart,monthDays,addDays,today,groupRecords,groupByCategory,taskLabel,entriesFor} from '../engine.js';
+import {markDone,undoDone,starSummary,redeem,removeReward,cancelRedemption,saveHabit,habitAt,cardsFor,validateState,weekStart,monthDays,addDays,today,groupRecords,groupByCategory,taskLabel,entriesFor} from '../engine.js';
 import {loadState,persist,makeBackup,readBackup,toCSV,STORE_KEY,BACKUP_KEY} from '../storage.js';
 const day='2026-09-14';
 test('완료 중복 적립 방지, 아이별 분리, 취소',()=>{
@@ -38,6 +38,17 @@ test('선물 사용과 취소, 잔액 부족 거절',()=>{
  const s=freshState(day);s.rewards[0].cost=1;assert.throws(()=>redeem(s,'child-1','reward-1'));
  markDone(s,'child-1','habit-1',day);const r=redeem(s,'child-1','reward-1');assert.equal(starSummary(s,'child-1').balance,0);
  assert.throws(()=>redeem(s,'child-1','reward-1'));cancelRedemption(s,r.id);cancelRedemption(s,r.id);assert.equal(starSummary(s,'child-1').balance,1);
+});
+test('선물을 목록에서 지워도 이전 교환 내역과 사용한 별은 보존',()=>{
+ const s=freshState(day);s.rewards[0].cost=1;
+ markDone(s,'child-1','habit-1',day);
+ const exchanged=redeem(s,'child-1','reward-1'),before=starSummary(s,'child-1');
+ removeReward(s,'reward-1');
+ assert.equal(s.rewards.some(reward=>reward.id==='reward-1'),false);
+ assert.equal(s.redemptions[0].title,exchanged.title);
+ assert.deepEqual(starSummary(s,'child-1'),before);
+ assert.throws(()=>redeem(s,'child-1','reward-1'));
+ assert.deepEqual(readBackup(makeBackup(s)),s);
 });
 test('백업 왕복, 손상된 기록 보존, 이전 저장본',()=>{
  const map=new Map(),storage={getItem:k=>map.get(k)||null,setItem:(k,v)=>map.set(k,v)};

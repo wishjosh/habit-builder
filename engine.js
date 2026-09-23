@@ -176,6 +176,12 @@ export function redeem(state,child,rewardId) {
   const item={id:uid(),childId:child,rewardId,title:reward.title,cost:reward.cost,at:new Date().toISOString()};
   state.redemptions.push(item); touch(state); return item;
 }
+export function removeReward(state,rewardId){
+  const index=state.rewards.findIndex(reward=>reward.id===rewardId);
+  if(index<0)throw new Error('목록에서 선물을 찾을 수 없어요.');
+  state.rewards.splice(index,1);
+  touch(state);
+}
 export function cancelRedemption(state,id) { const r=state.redemptions.find(r=>r.id===id); if(r&&!r.cancelledAt){r.cancelledAt=new Date().toISOString();touch(state);} }
 export function saveHabit(state,child,id,values,date=today()) {
   if(!state.children.some(c=>c.id===child)) throw new Error('아이를 선택해 주세요.');
