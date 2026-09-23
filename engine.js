@@ -22,6 +22,15 @@ export function saveCategory(state,id,values){
   else{if(state.categories.length>=500)throw new Error('묶음을 더 만들 수 없어요. 기존 묶음을 사용해 주세요.');id=uid();state.categories.push({id,label,type:values.type});}
   touch(state);return id;
 }
+export function moveCategory(state,id,direction){
+  if(direction!==-1&&direction!==1)throw new Error('묶음 순서를 바꿀 수 없어요.');
+  state.categories??=defaultCategories();
+  const positions=state.categories.flatMap((category,index)=>category.archivedFrom?[]:[index]);
+  const from=positions.findIndex(index=>state.categories[index].id===id),to=from+direction;
+  if(from<0||to<0||to>=positions.length)throw new Error('묶음을 더 옮길 수 없어요.');
+  [state.categories[positions[from]],state.categories[positions[to]]]=[state.categories[positions[to]],state.categories[positions[from]]];
+  touch(state);
+}
 export function categoryHabits(state,id,date=today()){
   return state.habits.filter(h=>(!h.archivedFrom||h.archivedFrom>date)&&(habitAt(h,date)?.category===id||h.versions.some(v=>v.effectiveFrom>date&&v.category===id)));
 }

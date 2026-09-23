@@ -1,9 +1,24 @@
 import {sampleState as freshState} from './fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {clone,saveCategory,deleteCategory,categoryInfo,categoryHabits,activeCategories,saveHabit,habitAt,markDone,cardsFor,entriesFor,groupRecords,starSummary,validateState} from '../engine.js';
+import {clone,freshState as emptyState,today,saveWeeklyPlan,dailyGroupsFor,saveCategory,moveCategory,deleteCategory,categoryInfo,categoryHabits,activeCategories,saveHabit,habitAt,markDone,cardsFor,entriesFor,groupRecords,starSummary,validateState} from '../engine.js';
 import {makeBackup,readBackup,toCSV,loadState,STORE_KEY} from '../storage.js';
 const day='2026-09-14',next='2026-09-15';
+test('상위 묶음 순서 변경은 오늘 계획과 백업에 반영되고 삭제한 묶음은 건너뛴다',()=>{
+  const s=emptyState();
+  saveWeeklyPlan(s,'child-1','reading',{mode:'daily'});
+  saveWeeklyPlan(s,'child-1','math',{mode:'daily'});
+  assert.deepEqual(dailyGroupsFor(s,'child-1',today()).map(group=>group.id),['reading','math']);
+  moveCategory(s,'math',-1);
+  assert.deepEqual(activeCategories(s).slice(0,2).map(category=>category.id),['math','reading']);
+  assert.deepEqual(dailyGroupsFor(s,'child-1',today()).map(group=>group.id),['math','reading']);
+  assert.deepEqual(readBackup(makeBackup(s)).categories,s.categories);
+  assert.throws(()=>moveCategory(s,'math',-1),/더 옮길 수/);
+  const archived=emptyState();archived.categories[1].archivedFrom=today();
+  moveCategory(archived,'reading',1);
+  assert.deepEqual(activeCategories(archived).slice(0,2).map(category=>category.id),['learning','reading']);
+  validateState(archived);
+});
 test('직접 만든 묶음에 두 아이의 할 일을 넣고 완료·백업·이름 변경',()=>{
   const s=freshState(day),id=saveCategory(s,null,{label:'영어 그림책',type:'reading'});
   for(const child of s.children)saveHabit(s,child.id,null,{title:'한 장 읽기',material:'My Book',category:id,frequency:'daily',points:2},day);
