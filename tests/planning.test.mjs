@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {freshState,today,addDays,weekStart,clone,saveWeeklyPlan,canResetStoppedWeeklyPlan,weeklyAt,weeklyDue,dailyGroupsFor,saveDailyPlan,saveRoutinePlan,updateRoutinePlan,recentDailyPlans,weeklyCopyDates,copyDailyPlanToWeek,removeDailyPlan,markDone,undoDone,starSummary,entriesFor,groupRecords,recentMaterials,historyHabits,missedPlansFor,stopHabit,eraseHabit,redeem,validateState,deleteCategory,cardsFor,saveHabit,habitAt} from '../engine.js';
+import {freshState,today,addDays,weekStart,clone,saveWeeklyPlan,canResetStoppedWeeklyPlan,weeklyAt,weeklyDue,dailyGroupsFor,saveDailyPlan,saveRoutinePlan,updateRoutinePlan,skipRoutineDate,restoreRoutineDate,recentDailyPlans,weeklyCopyDates,copyDailyPlanToWeek,removeDailyPlan,markDone,undoDone,starSummary,entriesFor,groupRecords,recentMaterials,historyHabits,missedPlansFor,stopHabit,eraseHabit,redeem,validateState,deleteCategory,cardsFor,saveHabit,habitAt} from '../engine.js';
 import {makeBackup,readBackup,persist,STORE_KEY,BACKUP_KEY} from '../storage.js';
 import {plannedItems,pastItems,taskManagerScreen,weeklyScreen} from '../planner-ui.js';
 import {sampleState} from './fixtures.mjs';
@@ -171,6 +171,46 @@ test('반복 내용의 이날 이후 변경은 이전 완료 기록을 보존하
  stopHabit(s,id,true,next);
  assert.equal(cardsFor(s,child,next).length,0);
  assert.deepEqual(eraseHabit(s,id,true),{entries:1,points:1});validateState(s);
+});
+test('반복 종료일을 포함해 보여 주고 그 다음 날부터는 나타나지 않는다',()=>{
+ const s=freshState(day),end=addDays(day,8);
+ assert.throws(()=>saveRoutinePlan(s,child,{category:'math',material:'눈높이',title:'4쪽',repeatPattern:'daily',repeatScope:'date',repeatEndDate:addDays(day,-1)},day));
+ const id=saveRoutinePlan(s,child,{category:'math',material:'눈높이',title:'4쪽',repeatPattern:'daily',repeatScope:'date',repeatEndDate:end},day);
+ assert.equal(cardsFor(s,child,end).some(card=>card.habit.id===id),true);
+ assert.equal(cardsFor(s,child,addDays(end,1)).some(card=>card.habit.id===id),false);
+ assert.match(plannedItems(s,day).find(item=>item.id===id).schedule,/까지/);
+ updateRoutinePlan(s,child,id,{material:'눈높이',title:'5쪽',repeatScope:'date',repeatEndDate:addDays(end,2)},end,'future',true);
+ assert.equal(cardsFor(s,child,addDays(end,2)).some(card=>card.habit.id===id),true);
+ assert.equal(cardsFor(s,child,addDays(end,3)).some(card=>card.habit.id===id),false);
+ assert.deepEqual(readBackup(makeBackup(s)),s);validateState(s);
+});
+test('반복 할 일은 이날만 빼고 다시 넣거나 이날부터 그만할 수 있으며 지난 별은 유지한다',()=>{
+ const s=freshState(day),id=saveRoutinePlan(s,child,{category:'math',material:'눈높이',title:'4쪽',repeatPattern:'daily',repeatScope:'ongoing'},day),skip=tomorrow;
+ markDone(s,child,id,day);
+ assert.throws(()=>skipRoutineDate(s,child,id,day,true),/완료/);
+ assert.throws(()=>skipRoutineDate(s,child,id,skip),/부모님/);
+ skipRoutineDate(s,child,id,skip,true);
+ assert.equal(cardsFor(s,child,skip).length,0);
+ assert.equal(cardsFor(s,child,addDays(skip,1)).length,1);
+ assert.equal(starSummary(s,child).earned,1);
+ assert.deepEqual(readBackup(makeBackup(s)),s);
+ assert.match(taskManagerScreen(s,'date',child,(action,label,cls='',attrs='')=>`<button data-action="${action}" ${attrs}>${label}</button>`,day),/다시 넣기/);
+ restoreRoutineDate(s,child,id,skip,true);
+ assert.equal(cardsFor(s,child,skip).length,1);
+ stopHabit(s,id,true,skip);
+ assert.equal(cardsFor(s,child,skip).length,0);
+ assert.equal(cardsFor(s,child,day).length,1);
+ assert.equal(starSummary(s,child).earned,1);validateState(s);
+});
+test('하루만 바꾼 반복 할 일도 이날만 빼면 예외 항목을 숨기고 완료 기록은 보호한다',()=>{
+ const s=freshState(day),id=saveRoutinePlan(s,child,{category:'reading',material:'해리포터',title:'1장',repeatPattern:'daily',repeatScope:'ongoing'},day);
+ const override=updateRoutinePlan(s,child,id,{material:'해리포터',title:'2장'},tomorrow,'day',true);
+ assert.equal(cardsFor(s,child,tomorrow)[0].habit.id,override);
+ skipRoutineDate(s,child,id,tomorrow,true);
+ assert.equal(cardsFor(s,child,tomorrow).length,0);
+ restoreRoutineDate(s,child,id,tomorrow,true);
+ assert.equal(cardsFor(s,child,tomorrow)[0].habit.id,override);
+ validateState(s);
 });
 test('세부 할 일의 격일 반복은 주가 바뀌어도 하루 간격을 유지한다',()=>{
  const s=freshState(day),id=saveRoutinePlan(s,child,{category:'reading',material:'ORT',title:'한 권 읽기',repeatPattern:'alternate',repeatScope:'ongoing'},tomorrow);
