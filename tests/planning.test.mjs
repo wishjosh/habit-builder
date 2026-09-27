@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {freshState,today,addDays,weekStart,clone,saveWeeklyPlan,weeklyAt,weeklyDue,dailyGroupsFor,saveDailyPlan,removeDailyPlan,markDone,undoDone,starSummary,entriesFor,groupRecords,recentMaterials,historyHabits,missedPlansFor,stopHabit,eraseHabit,redeem,validateState,deleteCategory,cardsFor,saveHabit} from '../engine.js';
+import {freshState,today,addDays,weekStart,clone,saveWeeklyPlan,canResetStoppedWeeklyPlan,weeklyAt,weeklyDue,dailyGroupsFor,saveDailyPlan,removeDailyPlan,markDone,undoDone,starSummary,entriesFor,groupRecords,recentMaterials,historyHabits,missedPlansFor,stopHabit,eraseHabit,redeem,validateState,deleteCategory,cardsFor,saveHabit} from '../engine.js';
 import {makeBackup,readBackup,persist,STORE_KEY,BACKUP_KEY} from '../storage.js';
 import {plannedItems,pastItems,taskManagerScreen,weeklyScreen} from '../planner-ui.js';
 import {sampleState} from './fixtures.mjs';
@@ -51,6 +51,21 @@ test('일요일에도 다음 주를 선택해 월요일부터 변경하고 이�
  assert.equal(weeklyDue(weeklyAt(s.weeklyPlans[0],nextStart),nextStart),true);
  assert.equal(weeklyDue(weeklyAt(s.weeklyPlans[0],addDays(nextStart,1)),addDays(nextStart,1)),false);
  validateState(s);
+});
+test('할 일 없는 종료 일정은 정하기로 표시하고 기록이 있으면 자동 정리하지 않는다',()=>{
+ const s=freshState(day),button=(action,label,cls='',attrs='')=>`<button data-action="${action}" ${attrs}>${label}</button>`;
+ saveWeeklyPlan(s,child,'reading',{mode:'daily'});
+ saveWeeklyPlan(s,child,'reading',{mode:'off'},true);
+ const html=weeklyScreen(s,s.children[0],button);
+ assert.match(html,/책 읽기 이번 주 할 일 정하기/);
+ assert.doesNotMatch(html,/책 읽기 이번 주 할 일 바꾸기/);
+ assert.match(html,/수학 이번 주 할 일 정하기/);
+ assert.equal(canResetStoppedWeeklyPlan(s,child,'reading'),true);
+ saveDailyPlan(s,child,null,{category:'reading',material:'기록할 책',title:'한 장 읽기'},day);
+ assert.equal(canResetStoppedWeeklyPlan(s,child,'reading'),false);
+ s.habits=[];
+ s.entries.sample={childId:child,snapshot:{category:'reading'}};
+ assert.equal(canResetStoppedWeeklyPlan(s,child,'reading'),false);
 });
 test('주간계획 변경은 부모 확인이 필요하며 이전 일정과 이미 정한 내일 계획 보존',()=>{
  const s=freshState(day);saveWeeklyPlan(s,child,'reading',{mode:'daily'});

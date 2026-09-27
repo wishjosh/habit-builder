@@ -80,6 +80,13 @@ export function weeklyDue(v,date){
   return date>=v.anchorDate&&(serial(date)-serial(v.anchorDate))%2===0;
 }
 export function weeklyLabel(v){if(!v||v.mode==='off')return '아직 정하지 않았어요';if(v.mode==='daily')return '매일';if(v.mode==='alternate')return `${Number(v.anchorDate.slice(5,7))}/${Number(v.anchorDate.slice(8))}부터 격일`;return [1,2,3,4,5,6,0].filter(d=>v.days.includes(d)).map(d=>'일월화수목금토'[d]).join(' · ');}
+export function canResetStoppedWeeklyPlan(state,child,category,date=today()){
+  const plan=(state.weeklyPlans||[]).find(p=>p.childId===child&&p.category===category);
+  return !!plan&&weeklyAt(plan,date)?.mode==='off'
+    &&!plan.versions.some(v=>v.effectiveFrom>date&&v.mode!=='off')
+    &&!state.habits.some(h=>h.childId===child&&h.versions.some(v=>v.category===category))
+    &&!Object.values(state.entries).some(e=>e.childId===child&&e.snapshot.category===category);
+}
 export function saveWeeklyPlan(state,child,category,values,parentConfirmed=false,date=today()){
   if(!state.children.some(c=>c.id===child)||!activeCategories(state).some(c=>c.id===category))throw new Error('아이와 묶음을 확인해 주세요.');
   if(!isDate(date)||date<today())throw new Error('주간계획은 오늘부터 바꿀 수 있어요.');
