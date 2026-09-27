@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {freshState,today,addDays,weekStart,clone,saveWeeklyPlan,canResetStoppedWeeklyPlan,weeklyAt,weeklyDue,dailyGroupsFor,saveDailyPlan,recentDailyPlans,weeklyCopyDates,copyDailyPlanToWeek,removeDailyPlan,markDone,undoDone,starSummary,entriesFor,groupRecords,recentMaterials,historyHabits,missedPlansFor,stopHabit,eraseHabit,redeem,validateState,deleteCategory,cardsFor,saveHabit} from '../engine.js';
+import {freshState,today,addDays,weekStart,clone,saveWeeklyPlan,canResetStoppedWeeklyPlan,weeklyAt,weeklyDue,dailyGroupsFor,saveDailyPlan,saveRoutinePlan,updateRoutinePlan,recentDailyPlans,weeklyCopyDates,copyDailyPlanToWeek,removeDailyPlan,markDone,undoDone,starSummary,entriesFor,groupRecords,recentMaterials,historyHabits,missedPlansFor,stopHabit,eraseHabit,redeem,validateState,deleteCategory,cardsFor,saveHabit,habitAt} from '../engine.js';
 import {makeBackup,readBackup,persist,STORE_KEY,BACKUP_KEY} from '../storage.js';
 import {plannedItems,pastItems,taskManagerScreen,weeklyScreen} from '../planner-ui.js';
 import {sampleState} from './fixtures.mjs';
@@ -126,6 +126,62 @@ test('복사할 요일을 고르면 같은 묶음의 세부 할 일이 주간 �
  assert.match(html,new RegExp(`data-action="weekly-open-task"[^>]*data-day="${wednesday}"`));
  assert.equal((html.match(new RegExp(`data-day="${wednesday}"`,'g'))||[]).length,2);
  assert.doesNotMatch(html,/data-child="child-2"/);
+ validateState(s);
+});
+test('내일 할 일에서 묶음 일정 없이 이번 주 반복 요일을 직접 정한다',()=>{
+ const s=freshState(day),start=tomorrow,weekday=new Date(start+'T12:00:00').getDay(),later=addDays(start,Math.min(2,6-weekday));
+ const id=saveRoutinePlan(s,child,{category:'math',material:'눈높이 수학',title:'4쪽 풀기',days:[weekday,new Date(later+'T12:00:00').getDay()],repeatScope:'week'},start);
+ assert.equal(cardsFor(s,child,start).some(card=>card.habit.id===id),true);
+ assert.equal(cardsFor(s,child,later).some(card=>card.habit.id===id),true);
+ assert.equal(cardsFor(s,child,addDays(start,7)).some(card=>card.habit.id===id),false);
+ assert.equal(dailyGroupsFor(s,child,start).some(group=>group.id==='math'),true);
+ const button=(action,label,cls='',attrs='')=>`<button data-action="${action}" ${attrs}>${label}</button>`;
+ const html=weeklyScreen(s,s.children[0],button,weekStart(start));
+ assert.match(html,/세부 할 일로 정했어요/);assert.match(html,/눈높이 수학/);
+ assert.throws(()=>saveRoutinePlan(s,child,{category:'math',material:'기탄 수학',title:'2쪽 풀기',days:[],repeatScope:'ongoing'},start));
+ assert.deepEqual(readBackup(makeBackup(s)),s);validateState(s);
+});
+test('같은 묶음의 반복 할 일은 요일이 달라도 함께 보이고 날짜별 변경은 한 번만 완료한다',()=>{
+ const s=freshState(day),start=day,weekday=new Date(start+'T12:00:00').getDay(),later=start,laterWeekday=new Date(addDays(start,2)+'T12:00:00').getDay();
+ const work=saveRoutinePlan(s,child,{category:'math',material:'눈높이 수학',title:'4쪽 풀기',days:[weekday,laterWeekday],repeatScope:'ongoing'},start);
+ const drill=saveRoutinePlan(s,child,{category:'math',material:'기탄 수학',title:'2쪽 풀기',days:[weekday],repeatScope:'ongoing'},start);
+ assert.equal(cardsFor(s,child,later).length,2);
+ assert.equal(cardsFor(s,child,addDays(start,7)).some(card=>card.habit.id===work),true);
+ const changed=updateRoutinePlan(s,child,work,{material:'눈높이 수학',title:'6쪽 풀기'},later,'day',true);
+ assert.equal(cardsFor(s,child,later).filter(card=>card.config.category==='math').length,2);
+ assert.equal(cardsFor(s,child,later).some(card=>card.habit.id===work),false);
+ assert.equal(cardsFor(s,child,later).some(card=>card.habit.id===changed),true);
+ assert.equal(habitAt(s.habits.find(h=>h.id===work),addDays(start,7)).title,'4쪽 풀기');
+ assert.throws(()=>markDone(s,child,work,later));
+ markDone(s,child,changed,later);markDone(s,child,drill,later);
+ assert.equal(starSummary(s,child).balance,2);
+ assert.deepEqual(eraseHabit(s,work,true),{entries:1,points:1});
+ assert.equal(cardsFor(s,child,later).length,1);
+ assert.equal(starSummary(s,child).balance,1);validateState(s);
+});
+test('반복 내용의 이날 이후 변경은 이전 완료 기록을 보존하고 부모 확인을 요구한다',()=>{
+ const s=freshState(day),weekday=new Date(day+'T12:00:00').getDay(),next=addDays(day,7);
+ const id=saveRoutinePlan(s,child,{category:'reading',material:'해리포터',title:'1장 읽기',days:[weekday],repeatScope:'ongoing'},day);
+ markDone(s,child,id,day);
+ assert.throws(()=>updateRoutinePlan(s,child,id,{material:'해리포터',title:'2장 읽기'},next,'future'));
+ updateRoutinePlan(s,child,id,{material:'해리포터',title:'2장 읽기'},next,'future',true);
+ assert.equal(cardsFor(s,child,day)[0].config.title,'1장 읽기');
+ assert.equal(cardsFor(s,child,next)[0].config.title,'2장 읽기');
+ assert.equal(entriesFor(s,child)[0].snapshot.title,'1장 읽기');
+ stopHabit(s,id,true,next);
+ assert.equal(cardsFor(s,child,next).length,0);
+ assert.deepEqual(eraseHabit(s,id,true),{entries:1,points:1});validateState(s);
+});
+test('세부 할 일의 격일 반복은 주가 바뀌어도 하루 간격을 유지한다',()=>{
+ const s=freshState(day),id=saveRoutinePlan(s,child,{category:'reading',material:'ORT',title:'한 권 읽기',repeatPattern:'alternate',repeatScope:'ongoing'},tomorrow);
+ const daily=saveRoutinePlan(s,child,{category:'math',material:'눈높이 수학',title:'4쪽 풀기',repeatPattern:'daily',repeatScope:'ongoing'},tomorrow);
+ assert.equal(cardsFor(s,child,tomorrow).some(card=>card.habit.id===id),true);
+ assert.equal(cardsFor(s,child,addDays(tomorrow,1)).some(card=>card.habit.id===id),false);
+ assert.equal(cardsFor(s,child,addDays(tomorrow,2)).some(card=>card.habit.id===id),true);
+ assert.equal(cardsFor(s,child,addDays(tomorrow,7)).some(card=>card.habit.id===id),false);
+ assert.equal(cardsFor(s,child,addDays(tomorrow,8)).some(card=>card.habit.id===id),true);
+ assert.equal(s.habits.find(h=>h.id===id).versions[0].anchorDate,tomorrow);
+ assert.equal(cardsFor(s,child,addDays(tomorrow,1)).some(card=>card.habit.id===daily),true);
  validateState(s);
 });
 test('세부 계획 수정·삭제는 부모 확인, 완료 기록 변경 방지와 취소 허용',()=>{

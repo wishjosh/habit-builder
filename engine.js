@@ -70,7 +70,7 @@ export function freshState(date=today()) {
   ], redemptions: [], notes: {} };
   return state;
 }
-export function habitAt(habit,date) { if(habit.archivedFrom && date>=habit.archivedFrom) return null; return [...habit.versions].filter(v=>v.effectiveFrom<=date).sort((a,b)=>b.effectiveFrom.localeCompare(a.effectiveFrom))[0] || null; }
+export function habitAt(habit,date) { if(habit.archivedFrom && date>=habit.archivedFrom||habit.repeatUntil&&date>=habit.repeatUntil) return null; return [...habit.versions].filter(v=>v.effectiveFrom<=date).sort((a,b)=>b.effectiveFrom.localeCompare(a.effectiveFrom))[0] || null; }
 export function weeklyAt(plan,date){return plan?[...plan.versions].filter(v=>v.effectiveFrom<=date).sort((a,b)=>b.effectiveFrom.localeCompare(a.effectiveFrom))[0]||null:null;}
 export function weeklyDue(v,date){
   if(!v||v.mode==='off')return false;
@@ -120,6 +120,43 @@ export function saveDailyPlan(state,child,id,values,day=today(),parentConfirmed=
   if(old&&old.dueDate!==day)throw new Error('계획한 날짜를 확인해 주세요.');
   saveHabit(state,child,id,{...values,frequency:'once',dueDate:day,points:old?.points??1},today());
   const h=existing||state.habits.at(-1);h.dailyPlan=true;return h.id;
+}
+export function saveRoutinePlan(state,child,values,day=today()){
+  if(!isDate(day)||day<today()||day>addDays(today(),1))throw new Error('반복할 일은 오늘이나 내일 정해 주세요.');
+  const pattern=['daily','alternate','weekdays'].includes(values.repeatPattern)?values.repeatPattern:'weekdays';
+  const days=[...new Set((values.days||[]).map(Number))];
+  if(pattern==='weekdays'&&!days.length)throw new Error('반복할 요일을 골라 주세요.');
+  if(!['week','ongoing'].includes(values.repeatScope))throw new Error('얼마나 반복할지 골라 주세요.');
+  if(pattern==='weekdays'&&values.repeatScope==='week'&&!datesBetween(day,addDays(weekStart(day),6)).some(date=>days.includes(dateObj(date).getDay())))throw new Error('이번 주에 할 요일을 골라 주세요.');
+  saveHabit(state,child,null,{...values,frequency:pattern,days:pattern==='weekdays'?days:[],anchorDate:day,points:1},day);
+  const habit=state.habits.at(-1);habit.routinePlan=true;
+  if(values.repeatScope==='week')habit.repeatUntil=addDays(weekStart(day),7);
+  return habit.id;
+}
+export function updateRoutinePlan(state,child,id,values,day,changeMode,parentConfirmed=false){
+  if(!parentConfirmed)throw new Error('이미 정한 계획은 부모님과 함께 바꿔 주세요.');
+  if(!isDate(day)||day<today())throw new Error('지난 할 일은 바꿀 수 없어요.');
+  const habit=state.habits.find(h=>h.id===id&&h.childId===child&&h.routinePlan);
+  const current=habit?habitAt(habit,day):null;
+  if(!habit||!current||!scheduled(current,day))throw new Error('이날의 반복 할 일을 찾을 수 없어요.');
+  if(state.entries[entryKey(child,id,day)])throw new Error('완료한 날의 내용은 그대로 남겨요.');
+  if(changeMode==='day'){
+    const existing=state.habits.find(h=>h.replacesHabitId===id&&h.versions.at(-1).dueDate===day&&(!h.archivedFrom||h.archivedFrom>day));
+    if(existing)throw new Error('이날 바꾼 할 일이 이미 있어요. 해당 할 일을 수정해 주세요.');
+    const detail={...current,...values,category:current.category,frequency:'once',dueDate:day,points:current.points};
+    saveHabit(state,child,null,detail,today());
+    const override=state.habits.at(-1);override.dailyPlan=true;override.replacesHabitId=id;
+    return override.id;
+  }
+  if(changeMode!=='future')throw new Error('변경할 범위를 골라 주세요.');
+  const pattern=['daily','alternate','weekdays'].includes(values.repeatPattern)?values.repeatPattern:current.frequency;
+  const days=values.days===undefined?current.days:[...new Set(values.days.map(Number))];
+  if(pattern==='weekdays'&&!days.length)throw new Error('반복할 요일을 골라 주세요.');
+  const scope=values.repeatScope|| (habit.repeatUntil?'week':'ongoing');
+  if(!['week','ongoing'].includes(scope))throw new Error('반복 기간을 골라 주세요.');
+  saveHabit(state,child,id,{...current,...values,category:current.category,frequency:pattern,days:pattern==='weekdays'?days:[],anchorDate:day,points:current.points},day);
+  if(scope==='week')habit.repeatUntil=addDays(weekStart(day),7);else delete habit.repeatUntil;
+  return id;
 }
 export function recentDailyPlans(state,child,category){
   const recorded=new Set(Object.values(state.entries).map(e=>e.habitId)),seen=new Set();
@@ -174,17 +211,22 @@ export function stopHabit(state,id,parentConfirmed=false,date=today()){
   const h=state.habits.find(h=>h.id===id);
   if(!h||h.archivedFrom&&h.archivedFrom<=date)throw new Error('현재 할 일을 찾을 수 없어요.');
   h.archivedFrom=date;touch(state);
+  if(h.routinePlan)for(const override of state.habits.filter(item=>item.replacesHabitId===id)){
+    const due=override.versions.at(-1).dueDate;
+    if(due>=date&&!state.entries[entryKey(override.childId,override.id,due)])override.archivedFrom=date;
+  }
 }
 export function eraseHabit(state,id,parentConfirmed=false){
   if(!parentConfirmed)throw new Error('부모님과 함께 확인해 주세요.');
-  const index=state.habits.findIndex(h=>h.id===id);
-  if(index<0)throw new Error('할 일을 찾을 수 없어요.');
+  const target=state.habits.find(h=>h.id===id);
+  if(!target)throw new Error('할 일을 찾을 수 없어요.');
+  const removedIds=new Set([id,...state.habits.filter(h=>h.replacesHabitId===id).map(h=>h.id)]);
   let entries=0,points=0;
-  for(const [key,entry] of Object.entries(state.entries))if(entry.habitId===id){entries++;points+=entry.points;delete state.entries[key];}
-  state.habits.splice(index,1);touch(state);
+  for(const [key,entry] of Object.entries(state.entries))if(removedIds.has(entry.habitId)){entries++;points+=entry.points;delete state.entries[key];}
+  state.habits=state.habits.filter(h=>!removedIds.has(h.id));touch(state);
   return {entries,points};
 }
-export function scheduled(v,date) { if(!v) return false; if(v.frequency==='weekdays') return v.days.includes(dateObj(date).getDay()); if(v.frequency==='once') return date===v.dueDate; return true; }
+export function scheduled(v,date) { if(!v) return false; if(v.frequency==='weekdays') return v.days.includes(dateObj(date).getDay()); if(v.frequency==='alternate')return weeklyDue({mode:'alternate',anchorDate:v.anchorDate},date);if(v.frequency==='once') return date===v.dueDate; return true; }
 export function entryKey(child,habit,date) { return `${child}/${habit}/${date}`; }
 export function entriesFor(state,child,start='0000-00-00',end='9999-99-99') { return Object.values(state.entries).filter(e=>e.childId===child && e.date>=start && e.date<=end); }
 export function periodCount(state,habit,v,date) {
@@ -193,9 +235,13 @@ export function periodCount(state,habit,v,date) {
   return entriesFor(state,habit.childId,start,end).filter(e=>e.habitId===habit.id).length;
 }
 export function cardsFor(state,child,date) {
+  const replaced=new Set(state.habits.filter(h=>h.childId===child&&h.replacesHabitId&&(
+    scheduled(habitAt(h,date),date)||state.entries[entryKey(child,h.id,date)]
+  )).map(h=>h.replacesHabitId));
   return state.habits.filter(h=>h.childId===child).flatMap(h=>{
     const entry=state.entries[entryKey(child,h.id,date)];
     const v=habitAt(h,date);
+    if(replaced.has(h.id)&&!entry)return [];
     if(!scheduled(v,date) && !entry) return [];
     const display=entry?.snapshot||v;
     const flexible=['weekly','monthly'].includes(display.frequency);
@@ -209,6 +255,7 @@ export function markDone(state,child,habitId,date=today()) {
   if(!h) throw new Error('활동을 찾을 수 없어요.');
   const key=entryKey(child,habitId,date);
   if(state.entries[key]) return false;
+  if(h.routinePlan&&state.habits.some(other=>other.childId===child&&other.replacesHabitId===habitId&&scheduled(habitAt(other,date),date)))throw new Error('이날 바꾼 할 일에서 완료해 주세요.');
   const v=habitAt(h,date);
   if(!scheduled(v,date)) throw new Error('이 날짜의 활동이 아니에요.');
   if(['weekly','monthly'].includes(v.frequency)&&periodCount(state,h,v,date)>=v.target) throw new Error('이 기간의 약속을 모두 채웠어요.');
@@ -248,12 +295,14 @@ export function saveHabit(state,child,id,values,date=today()) {
   if(!category)throw new Error('사용할 상위 묶음을 골라 주세요.');
   if(['reading','math'].includes(category.type)&&!material)throw new Error('책이나 교재 이름을 적어 주세요.');
   const frequency=values.frequency;
-  if(!['daily','weekdays','weekly','monthly','once'].includes(frequency)) throw new Error('반복 방법을 선택해 주세요.');
+  if(!['daily','weekdays','alternate','weekly','monthly','once'].includes(frequency)) throw new Error('반복 방법을 선택해 주세요.');
   const days=[...new Set(values.days||[])].map(Number).filter(n=>n>=0&&n<=6);
   if(frequency==='weekdays'&&!days.length) throw new Error('실천할 요일을 골라 주세요.');
   if(frequency==='once'&&(!isDate(values.dueDate)||values.dueDate<date)) throw new Error('오늘 이후의 활동 날짜를 골라 주세요.');
+  if(frequency==='alternate'&&!isDate(values.anchorDate))throw new Error('격일로 시작할 날짜를 골라 주세요.');
   const v={effectiveFrom:date,title,material,detail:String(values.detail||'').trim().slice(0,160),category:category.id,frequency,days,target:Math.min(frequency==='weekly'?7:31,Math.max(1,Math.round(Number(values.target)||1))),points:Math.min(20,Math.max(0,Math.round(Number(values.points)||0)))};
   if(frequency==='once')v.dueDate=values.dueDate;
+  if(frequency==='alternate')v.anchorDate=values.anchorDate;
   if(id){const h=state.habits.find(h=>h.id===id&&h.childId===child);if(!h)throw new Error('활동을 찾을 수 없어요.');h.versions=h.versions.filter(x=>x.effectiveFrom!==date);h.versions.push(v);delete h.archivedFrom;}
   else state.habits.push({id:uid(),childId:child,versions:[v]});
   touch(state);
@@ -273,6 +322,7 @@ export function groupRecords(records,state){
 }
 export function frequencyLabel(v) {
   if(v.frequency==='daily')return '매일';
+  if(v.frequency==='alternate')return '하루 걸러 격일';
   if(v.frequency==='weekly')return `일주일에 ${v.target}번`;
   if(v.frequency==='monthly')return `한 달에 ${v.target}번`;
   if(v.frequency==='once')return `${Number(v.dueDate.slice(5,7))}월 ${Number(v.dueDate.slice(8))}일`;
@@ -295,16 +345,20 @@ export function validateState(s) {
     for(const v of p.versions){if(!v||!isDate(v.effectiveFrom)||dates.has(v.effectiveFrom)||!['daily','days','alternate','off'].includes(v.mode)||!Array.isArray(v.days)||v.days.some(d=>!Number.isInteger(d)||d<0||d>6)||v.mode==='days'&&!v.days.length||!isDate(v.anchorDate))fail();dates.add(v.effectiveFrom);}
   }
   const habits=new Set();
-  for(const h of s.habits){if(!short(h.id,100)||habits.has(h.id)||!ids.has(h.childId)||!Array.isArray(h.versions)||!h.versions.length||h.versions.length>1000||h.archivedFrom&&!isDate(h.archivedFrom))fail();habits.add(h.id);
-    for(const v of h.versions){if(!isDate(v.effectiveFrom)||!short(v.title,60)||typeof v.detail!=='string'||v.detail.length>160||!categoryIds.has(v.category)||!['daily','weekdays','weekly','monthly','once'].includes(v.frequency)||!Array.isArray(v.days)||v.days.some(d=>!Number.isInteger(d)||d<0||d>6)||v.frequency==='weekdays'&&!v.days.length||!Number.isInteger(v.target)||v.target<1||v.target>31||v.frequency==='weekly'&&v.target>7||!Number.isInteger(v.points)||v.points<0||v.points>20||v.frequency==='once'&&!isDate(v.dueDate))fail();}
+  for(const h of s.habits){if(!short(h.id,100)||habits.has(h.id)||!ids.has(h.childId)||!Array.isArray(h.versions)||!h.versions.length||h.versions.length>1000||h.archivedFrom&&!isDate(h.archivedFrom)||h.repeatUntil&&!isDate(h.repeatUntil))fail();habits.add(h.id);
+    for(const v of h.versions){if(!isDate(v.effectiveFrom)||!short(v.title,60)||typeof v.detail!=='string'||v.detail.length>160||!categoryIds.has(v.category)||!['daily','weekdays','alternate','weekly','monthly','once'].includes(v.frequency)||!Array.isArray(v.days)||v.days.some(d=>!Number.isInteger(d)||d<0||d>6)||v.frequency==='weekdays'&&!v.days.length||v.frequency==='alternate'&&!isDate(v.anchorDate)||!Number.isInteger(v.target)||v.target<1||v.target>31||v.frequency==='weekly'&&v.target>7||!Number.isInteger(v.points)||v.points<0||v.points>20||v.frequency==='once'&&!isDate(v.dueDate))fail();}
   }
   if(Object.keys(s.entries).length>50000||s.redemptions.length>10000||s.rewards.length>200)fail();
   for(const v of s.habits.flatMap(h=>h.versions).concat(Object.values(s.entries).map(e=>e?.snapshot))){if(v?.material!==undefined&&(typeof v.material!=='string'||v.material.length>100))fail();}
-  for(const [key,e] of Object.entries(s.entries)){const h=s.habits.find(h=>h.id===e.habitId);if(!ids.has(e.childId)||!h||h.childId!==e.childId||!isDate(e.date)||key!==entryKey(e.childId,e.habitId,e.date)||!Number.isInteger(e.points)||e.points<0||e.points>20||!e.snapshot||!short(e.snapshot.title,60)||!categoryIds.has(e.snapshot.category)||!['daily','weekdays','weekly','monthly','once'].includes(e.snapshot.frequency)||!Array.isArray(e.snapshot.days)||!Number.isInteger(e.snapshot.target)||typeof e.snapshot.detail!=='string')fail();}
+  for(const [key,e] of Object.entries(s.entries)){const h=s.habits.find(h=>h.id===e.habitId);if(!ids.has(e.childId)||!h||h.childId!==e.childId||!isDate(e.date)||key!==entryKey(e.childId,e.habitId,e.date)||!Number.isInteger(e.points)||e.points<0||e.points>20||!e.snapshot||!short(e.snapshot.title,60)||!categoryIds.has(e.snapshot.category)||!['daily','weekdays','alternate','weekly','monthly','once'].includes(e.snapshot.frequency)||!Array.isArray(e.snapshot.days)||!Number.isInteger(e.snapshot.target)||typeof e.snapshot.detail!=='string')fail();}
   for(const r of s.rewards){if(!short(r.id,100)||!short(r.title,60)||!Number.isInteger(r.cost)||r.cost<1||r.cost>9999)fail();}
   for(const r of s.redemptions){if(!short(r.id,100)||!ids.has(r.childId)||!short(r.title,60)||!Number.isInteger(r.cost)||r.cost<1||r.cost>9999||!Number.isFinite(Date.parse(r.at)))fail();}
   for(const [k,v] of Object.entries(s.restDays)){const [child,date]=k.split('/');if(!ids.has(child)||!isDate(date)||typeof v!=='boolean')fail();}
   for(const [k,v] of Object.entries(s.notes)){const [child,week]=k.split('/');if(!ids.has(child)||!isDate(week)||typeof v!=='string'||v.length>1000)fail();}
-  for(const h of s.habits){if(h.dailyPlan!==undefined&&typeof h.dailyPlan!=='boolean'||h.dailyPlan&&h.versions.some(v=>v.frequency!=='once'))fail();}
+  const overrides=new Set();
+  for(const h of s.habits){
+    if(h.dailyPlan!==undefined&&typeof h.dailyPlan!=='boolean'||h.dailyPlan&&h.versions.some(v=>v.frequency!=='once')||h.routinePlan!==undefined&&typeof h.routinePlan!=='boolean'||h.routinePlan&&h.versions.some(v=>!['daily','weekdays','alternate'].includes(v.frequency))||h.repeatUntil&&!h.routinePlan||h.replacesHabitId&&!h.dailyPlan)fail();
+    if(h.replacesHabitId){const parent=s.habits.find(item=>item.id===h.replacesHabitId),date=h.versions.at(-1).dueDate,key=`${h.replacesHabitId}/${date}`,active=!h.archivedFrom||h.archivedFrom>date||!!s.entries[entryKey(h.childId,h.id,date)];if(!parent?.routinePlan||parent.childId!==h.childId||active&&overrides.has(key))fail();if(active)overrides.add(key);}
+  }
   return clone({...s,categories,weeklyPlans});
 }
