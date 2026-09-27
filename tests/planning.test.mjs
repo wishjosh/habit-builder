@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {freshState,today,addDays,weekStart,clone,saveWeeklyPlan,canResetStoppedWeeklyPlan,weeklyAt,weeklyDue,dailyGroupsFor,saveDailyPlan,removeDailyPlan,markDone,undoDone,starSummary,entriesFor,groupRecords,recentMaterials,historyHabits,missedPlansFor,stopHabit,eraseHabit,redeem,validateState,deleteCategory,cardsFor,saveHabit} from '../engine.js';
+import {freshState,today,addDays,weekStart,clone,saveWeeklyPlan,canResetStoppedWeeklyPlan,weeklyAt,weeklyDue,dailyGroupsFor,saveDailyPlan,recentDailyPlans,weeklyCopyDates,copyDailyPlanToWeek,removeDailyPlan,markDone,undoDone,starSummary,entriesFor,groupRecords,recentMaterials,historyHabits,missedPlansFor,stopHabit,eraseHabit,redeem,validateState,deleteCategory,cardsFor,saveHabit} from '../engine.js';
 import {makeBackup,readBackup,persist,STORE_KEY,BACKUP_KEY} from '../storage.js';
 import {plannedItems,pastItems,taskManagerScreen,weeklyScreen} from '../planner-ui.js';
 import {sampleState} from './fixtures.mjs';
@@ -86,6 +86,31 @@ test('내일 계획은 오늘 완료할 수 없고 날짜별 제목·분량·완
  assert.equal(groupRecords(entriesFor(s,child),s)[0].materials[0].title,'어린 왕자');
  assert.deepEqual(recentMaterials(s,child,'reading'),['어린 왕자']);assert.deepEqual(recentMaterials(s,'child-2','reading'),[]);
  assert.deepEqual(readBackup(makeBackup(s)),s);
+});
+test('최근 할 일은 아이와 묶음별로 다시 고르고 삭제한 계획은 제안하지 않는다',()=>{
+ const s=freshState(day),first=saveDailyPlan(s,child,null,{category:'math',material:'눈높이 수학',title:'4쪽 풀기'},day);
+ saveDailyPlan(s,child,null,{category:'math',material:'눈높이 수학',title:'5쪽 풀기'},tomorrow);
+ assert.deepEqual(recentDailyPlans(s,child,'math').map(v=>v.title),['5쪽 풀기','4쪽 풀기']);
+ assert.deepEqual(recentDailyPlans(s,'child-2','math'),[]);
+ stopHabit(s,first,true,day);
+ assert.deepEqual(recentDailyPlans(s,child,'math').map(v=>v.title),['5쪽 풀기']);
+});
+test('같은 묶음의 다른 교재는 같은 날 함께 복사하고 똑같은 할 일만 중복하지 않는다',()=>{
+ const s=freshState(day),monday=addDays(weekStart(day),7),wednesday=addDays(monday,2),friday=addDays(monday,4);
+ saveWeeklyPlan(s,child,'math',{mode:'days',days:[1,3,5]},false,monday);
+ saveHabit(s,child,null,{category:'math',material:'기탄 수학',title:'2쪽 풀기',frequency:'once',dueDate:wednesday,points:1});s.habits.at(-1).dailyPlan=true;
+ saveHabit(s,child,null,{category:'math',material:'눈높이 수학',title:'4쪽 풀기',frequency:'once',dueDate:friday,points:1});s.habits.at(-1).dailyPlan=true;
+ saveHabit(s,child,null,{category:'math',material:'눈높이 수학',title:'4쪽 풀기',frequency:'once',dueDate:monday,points:1});const source=s.habits.at(-1);source.dailyPlan=true;
+ assert.deepEqual(weeklyCopyDates(s,child,'math',monday),[wednesday,friday]);
+ assert.deepEqual(copyDailyPlanToWeek(s,child,source.id,monday),[wednesday]);
+ assert.deepEqual(copyDailyPlanToWeek(s,child,source.id,monday),[]);
+ assert.equal(s.habits.filter(h=>h.dailyPlan&&h.versions.at(-1).dueDate===wednesday).length,2);
+ assert.equal(s.habits.filter(h=>h.dailyPlan&&h.versions.at(-1).dueDate===friday).length,1);
+ const copied=s.habits.find(h=>h.id!==source.id&&h.versions.at(-1).dueDate===wednesday&&h.versions.at(-1).material==='눈높이 수학');
+ assert.equal(copied.versions.at(-1).title,'4쪽 풀기');assert.equal(starSummary(s,child).balance,0);
+ assert.throws(()=>saveDailyPlan(s,child,null,{category:'math',material:'눈높이 수학',title:'새 계획'},wednesday));
+ saveDailyPlan(s,child,copied.id,{category:'math',material:'눈높이 수학',title:'6쪽 풀기'},wednesday,true);
+ assert.equal(copied.versions.at(-1).title,'6쪽 풀기');validateState(s);
 });
 test('세부 계획 수정·삭제는 부모 확인, 완료 기록 변경 방지와 취소 허용',()=>{
  const s=freshState(day),values={category:'math',material:'눈높이 수학',title:'A1권 2쪽 풀기'};

@@ -111,7 +111,7 @@ export function dailyGroupsFor(state,child,date){
   });
 }
 export function saveDailyPlan(state,child,id,values,day=today(),parentConfirmed=false){
-  if(!isDate(day)||day<today()||day>addDays(today(),1))throw new Error('오늘이나 내일의 할 일을 정해 주세요.');
+  if(!isDate(day)||day<today()||!id&&day>addDays(today(),1))throw new Error('새 할 일은 오늘이나 내일 정해 주세요.');
   const existing=id?state.habits.find(h=>h.id===id&&h.childId===child):null;
   if(id&&(!existing||!existing.dailyPlan))throw new Error('이 계획을 찾을 수 없어요.');
   if(existing&&!parentConfirmed)throw new Error('이미 정한 계획은 부모님과 함께 바꿔 주세요.');
@@ -120,6 +120,31 @@ export function saveDailyPlan(state,child,id,values,day=today(),parentConfirmed=
   if(old&&old.dueDate!==day)throw new Error('계획한 날짜를 확인해 주세요.');
   saveHabit(state,child,id,{...values,frequency:'once',dueDate:day,points:old?.points??1},today());
   const h=existing||state.habits.at(-1);h.dailyPlan=true;return h.id;
+}
+export function recentDailyPlans(state,child,category){
+  const recorded=new Set(Object.values(state.entries).map(e=>e.habitId)),seen=new Set();
+  return state.habits.filter(h=>h.childId===child&&h.dailyPlan&&(!h.archivedFrom||recorded.has(h.id)))
+    .map(h=>h.versions.at(-1)).filter(v=>v.category===category)
+    .sort((a,b)=>b.dueDate.localeCompare(a.dueDate))
+    .flatMap(v=>{const key=`${v.material}\0${v.title}`;if(seen.has(key))return [];seen.add(key);return [{material:v.material,title:v.title}];}).slice(0,3);
+}
+export function weeklyCopyDates(state,child,category,day,task=null){
+  if(!isDate(day)||day<today())return [];
+  const plan=(state.weeklyPlans||[]).find(p=>p.childId===child&&p.category===category),end=addDays(weekStart(day),6);
+  if(!plan)return [];
+  return datesBetween(addDays(day,1),end).filter(next=>weeklyDue(weeklyAt(plan,next),next)
+    &&(!task||!state.habits.some(h=>{
+      const v=h.versions.at(-1);
+      return h.childId===child&&h.dailyPlan&&v.category===category&&v.dueDate===next
+        &&v.material===task.material&&v.title===task.title&&(!h.archivedFrom||h.archivedFrom>next);
+    })));
+}
+export function copyDailyPlanToWeek(state,child,id,day){
+  const h=state.habits.find(h=>h.id===id&&h.childId===child&&h.dailyPlan),v=h?.versions.at(-1);
+  if(!v||v.dueDate!==day)throw new Error('복사할 날짜별 할 일을 찾을 수 없어요.');
+  const dates=weeklyCopyDates(state,child,v.category,day,v);
+  for(const next of dates){saveHabit(state,child,null,{...v,dueDate:next},today());state.habits.at(-1).dailyPlan=true;}
+  return dates;
 }
 export function removeDailyPlan(state,child,id,parentConfirmed=false){
   if(!parentConfirmed)throw new Error('부모님과 함께 확인해 주세요.');
