@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {freshState,today,addDays,clone,saveWeeklyPlan,weeklyAt,weeklyDue,dailyGroupsFor,saveDailyPlan,removeDailyPlan,markDone,undoDone,starSummary,entriesFor,groupRecords,recentMaterials,historyHabits,missedPlansFor,stopHabit,eraseHabit,redeem,validateState,deleteCategory,cardsFor,saveHabit} from '../engine.js';
+import {freshState,today,addDays,weekStart,clone,saveWeeklyPlan,weeklyAt,weeklyDue,dailyGroupsFor,saveDailyPlan,removeDailyPlan,markDone,undoDone,starSummary,entriesFor,groupRecords,recentMaterials,historyHabits,missedPlansFor,stopHabit,eraseHabit,redeem,validateState,deleteCategory,cardsFor,saveHabit} from '../engine.js';
 import {makeBackup,readBackup,persist,STORE_KEY,BACKUP_KEY} from '../storage.js';
-import {plannedItems,pastItems,taskManagerScreen} from '../planner-ui.js';
+import {plannedItems,pastItems,taskManagerScreen,weeklyScreen} from '../planner-ui.js';
 import {sampleState} from './fixtures.mjs';
 const day=today(),tomorrow=addDays(day,1),child='child-1';
 test('설정 목록은 두 아이의 주간·날짜별·기존 반복 계획을 함께 모으고 아이별로 거른다',()=>{
@@ -36,6 +36,21 @@ test('월수금과 격일은 달·주·연도 경계를 넘어 일정 유지',()
  assert.equal(weeklyDue(alternate,'2026-12-29'),false);assert.equal(weeklyDue(alternate,'2026-12-30'),true);
  assert.equal(weeklyDue(alternate,'2027-01-01'),true);assert.equal(weeklyDue(alternate,'2027-01-04'),false);
  assert.equal(weeklyDue({...alternate,anchorDate:'2024-02-28'},'2024-03-01'),true);
+});
+test('일요일에도 다음 주를 선택해 월요일부터 변경하고 이번 주 일정은 보존',()=>{
+ const s=freshState(day),nextStart=addDays(weekStart(day),7),button=(action,label,cls='',attrs='')=>`<button data-action="${action}" ${attrs}>${label}</button>`;
+ assert.equal(weekStart('2026-09-27'),'2026-09-21');
+ const html=weeklyScreen(s,s.children[0],button,nextStart);
+ assert.match(html,/다음 주/);assert.match(html,new RegExp(`data-start="${nextStart}"`));assert.match(html,/aria-pressed="true"/);
+ saveWeeklyPlan(s,child,'reading',{mode:'daily'});
+ saveWeeklyPlan(s,child,'reading',{mode:'days',days:[1,3,5]},true,nextStart);
+ assert.equal(weeklyAt(s.weeklyPlans[0],day).mode,'daily');
+ assert.equal(weeklyAt(s.weeklyPlans[0],nextStart).mode,'days');
+ saveWeeklyPlan(s,child,'reading',{mode:'alternate',anchorDate:day},true,day);
+ assert.equal(weeklyAt(s.weeklyPlans[0],nextStart).mode,'days');
+ assert.equal(weeklyDue(weeklyAt(s.weeklyPlans[0],nextStart),nextStart),true);
+ assert.equal(weeklyDue(weeklyAt(s.weeklyPlans[0],addDays(nextStart,1)),addDays(nextStart,1)),false);
+ validateState(s);
 });
 test('주간계획 변경은 부모 확인이 필요하며 이전 일정과 이미 정한 내일 계획 보존',()=>{
  const s=freshState(day);saveWeeklyPlan(s,child,'reading',{mode:'daily'});

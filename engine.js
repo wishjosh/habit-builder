@@ -91,7 +91,7 @@ export function saveWeeklyPlan(state,child,category,values,parentConfirmed=false
   if(!isDate(anchorDate))throw new Error('격일 계획을 시작할 날짜를 골라 주세요.');
   const v={effectiveFrom:date,mode,days:mode==='days'?days:[],anchorDate};
   state.weeklyPlans??=[];
-  if(existing){existing.versions=existing.versions.filter(v=>v.effectiveFrom<date);existing.versions.push(v);}
+  if(existing){existing.versions=existing.versions.filter(v=>v.effectiveFrom!==date);existing.versions.push(v);}
   else state.weeklyPlans.push({id:uid(),childId:child,category,versions:[v]});
   touch(state);
 }

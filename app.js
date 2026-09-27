@@ -7,7 +7,7 @@ import {SheetBridge,readCloudConfig,saveCloudConfig,encodeConnection,decodeConne
 
 const root=document.querySelector('#app'),dialog=document.querySelector('#dialog');
 const loaded=loadState();let state=loaded.state;
-let page='today',childId=state?.children[0].id,date=today(),recordTab='week',recordMonth=today().slice(0,7),selectedCalendarDay=today(),managerView='date',managerFilter='all',managerScope='current';
+let page='today',childId=state?.children[0].id,date=today(),weeklyStart=weekStart(today()),recordTab='week',recordMonth=today().slice(0,7),selectedCalendarDay=today(),managerView='date',managerFilter='all',managerScope='current';
 let toastTimer,cloud=null,cloudConfig=readCloudConfig(),syncBusy=false,cloudMessage='',generation=0,lastSaved=null,selectedAvatar='fox';
 const weekdays=['일','월','화','수','목','금','토'];
 const navItems=[['today','home','오늘'],['weekly','calendar','이번 주'],['records','chart','내 기록'],['rewards','star','별 모으기'],['parent','settings','설정']];
@@ -25,8 +25,8 @@ function render(){
   if(!state){renderRecovery();return;}
   if(!state.children.some(c=>c.id===childId))childId=state.children[0].id;
   rememberFolds(root);
-  const html=page==='today'?renderToday():page==='weekly'?weeklyScreen(state,child(),btn):page==='records'?renderRecords():page==='rewards'?renderRewards():renderParent();
-  root.innerHTML=`<div class="shell"><aside class="sidebar">${brand()}${navigation('nav')}<div class="sidebar-bottom"><div class="sprout">${icon('leaf')}<br>하루의 작은 실천이<br>나만의 습관이 되어요.</div>우리 가족의 작은 성장 기록<br>Habit Builder · 0.5.5</div></aside><div class="content"><header class="topbar"><div class="desktop-date"><div class="eyebrow">OUR LITTLE EVERYDAY</div><div class="date-label">${today().slice(0,4)}년 ${fmt(today())}</div></div>${brand(true)}<div class="profile-switch" aria-label="아이 선택">${state.children.map(c=>btn('child',`${avatar(c.avatar)}<span>${esc(c.name)}</span>`,c.id===childId?'active':'',`data-id="${esc(c.id)}" aria-pressed="${c.id===childId}"`)).join('')}</div></header><main id="main" tabindex="-1">${loaded.warning?`<div class="banner">${esc(loaded.warning)}</div>`:''}${html}</main></div>${navigation('mobile-nav')}</div>`;
+  const html=page==='today'?renderToday():page==='weekly'?weeklyScreen(state,child(),btn,weeklyStart):page==='records'?renderRecords():page==='rewards'?renderRewards():renderParent();
+  root.innerHTML=`<div class="shell"><aside class="sidebar">${brand()}${navigation('nav')}<div class="sidebar-bottom"><div class="sprout">${icon('leaf')}<br>하루의 작은 실천이<br>나만의 습관이 되어요.</div>우리 가족의 작은 성장 기록<br>Habit Builder · 0.5.6</div></aside><div class="content"><header class="topbar"><div class="desktop-date"><div class="eyebrow">OUR LITTLE EVERYDAY</div><div class="date-label">${today().slice(0,4)}년 ${fmt(today())}</div></div>${brand(true)}<div class="profile-switch" aria-label="아이 선택">${state.children.map(c=>btn('child',`${avatar(c.avatar)}<span>${esc(c.name)}</span>`,c.id===childId?'active':'',`data-id="${esc(c.id)}" aria-pressed="${c.id===childId}"`)).join('')}</div></header><main id="main" tabindex="-1">${loaded.warning?`<div class="banner">${esc(loaded.warning)}</div>`:''}${html}</main></div>${navigation('mobile-nav')}</div>`;
 }
 function renderRecovery(){root.innerHTML=`<main class="content"><div class="danger-box"><h1>기록을 먼저 확인해 주세요</h1><p>${esc(loaded.warning)}</p><p>이전 저장본으로 복구하거나, 원본 파일을 내려받아 보관할 수 있어요.</p><div class="button-row">${btn('recover','이전 저장본 복구','primary')}${btn('raw-export','현재 저장 원본 받기')}${btn('import','백업 파일 불러오기')}</div><input id="import-file" type="file" accept=".json,application/json" class="file-input"></div></main>`;}
 function renderToday(){
@@ -68,7 +68,7 @@ function renderRewards(){
 function renderParent(){
   return `${heading('설정')}<div class="banner">현재와 지난 할 일을 날짜나 묶음으로 모아 보고, 부모님과 함께 고쳐요.</div>${taskManagerScreen(state,managerView,managerFilter,btn,today(),managerScope)}<section class="panel"><h2>함께하는 아이들</h2>${state.children.map(c=>`<div class="settings-item">${avatar(c.avatar)}<div class="grow"><strong>${esc(c.name)}</strong><p>${c.style==='together'?'부모와 함께 기록해요':'스스로 확인하고 기록해요'}</p></div>${btn('edit-child','바꾸기','text-btn',`data-id="${esc(c.id)}"`)}</div>`).join('')}</section>${renderCategorySettings()}<section class="panel"><div class="section-head" style="margin-top:0"><h2>우리 가족의 선물</h2>${btn('add-reward',`${icon('plus')}추가`,'text-btn')}</div>${!state.rewards.length?'<p>아직 정한 선물이 없어요. 추가 버튼으로 가족의 약속을 만들 수 있어요.</p>':''}${state.rewards.map(r=>`<div class="settings-item"><span class="activity-icon yellow">${icon(r.icon||'gift')}</span><div class="grow"><strong>${esc(r.title)}</strong><p>별 ${r.cost}개</p></div>${btn('edit-reward','수정','text-btn',`data-id="${esc(r.id)}"`)}${btn('remove-reward','삭제','text-btn danger',`data-id="${esc(r.id)}" aria-label="${esc(r.title)} 선물 삭제"`)}</div>`).join('')}${state.redemptions.some(r=>!r.cancelledAt)?`<details class="settings-section" style="margin-top:20px"><summary>선물 교환 내역 관리</summary>${state.redemptions.filter(r=>!r.cancelledAt).slice().reverse().map(r=>`<div class="settings-item"><div class="grow"><strong>${esc(state.children.find(c=>c.id===r.childId)?.name)} · ${esc(r.title)}</strong><p>별 ${r.cost}개 · ${fmt(today(new Date(r.at)))}</p></div>${btn('cancel-reward','교환 취소','text-btn',`data-id="${esc(r.id)}"`)}</div>`).join('')}</details>`:''}</section>
   <section class="panel"><h2>가족 기록 연결</h2><p>아이패드와 부모님의 기기에서 같은 기록을 볼 수 있어요. 연결 전에도 이 기기에는 자동 저장돼요.</p><div class="cloud-status" id="cloud-status">${esc(saveLabel())}</div><div class="button-row">${btn('connect',`${icon('cloud')}${cloudConfig?.enabled?'연결 설정':'가족 연결 코드 입력'}`)}${cloudConfig?.enabled?btn('sync','지금 동기화')+btn('share-connection','다른 기기 연결'):''}</div>${cloudConfig?.enabled&&cloudConfig.dirty?'<p>아직 다른 기기에 전달하지 못한 기록이 있어요. 연결을 확인한 뒤 동기화해 주세요.</p>':''}</section>
-  <section class="panel"><h2>기록 보관하기</h2><p>백업 파일에는 두 아이의 설정과 기록이 함께 담겨요. 표 파일은 스프레드시트에서 열 수 있어요.</p><div class="button-row">${btn('export',`${icon('download')}전체 기록 백업`)}${btn('csv',`${icon('download')}실천 기록 표`)}${btn('import',`${icon('upload')}백업 불러오기`)}</div><input id="import-file" type="file" accept=".json,application/json" class="file-input"><details class="settings-section" style="margin-top:20px"><summary>아이패드 홈 화면에 추가하기</summary><p>Safari에서 앱 주소를 열고 공유 버튼 → ‘홈 화면에 추가’를 선택하세요. 처음 열 때 인터넷에 연결하면 이후에는 연결이 끊겨도 기록할 수 있어요. 가족 기록 연결은 인터넷이 돌아오면 이어집니다.</p><p>기록은 브라우저마다 따로 저장돼요. 다른 브라우저나 홈 화면 앱으로 옮길 때는 가족 연결 코드 또는 백업 파일을 사용해 주세요.</p></details></section><p class="version-note">습관 형성 시스템 · Habit Builder 0.5.5<br>아이의 속도에 맞춰, 우리 가족이 함께 만들어요.</p>`;
+  <section class="panel"><h2>기록 보관하기</h2><p>백업 파일에는 두 아이의 설정과 기록이 함께 담겨요. 표 파일은 스프레드시트에서 열 수 있어요.</p><div class="button-row">${btn('export',`${icon('download')}전체 기록 백업`)}${btn('csv',`${icon('download')}실천 기록 표`)}${btn('import',`${icon('upload')}백업 불러오기`)}</div><input id="import-file" type="file" accept=".json,application/json" class="file-input"><details class="settings-section" style="margin-top:20px"><summary>아이패드 홈 화면에 추가하기</summary><p>Safari에서 앱 주소를 열고 공유 버튼 → ‘홈 화면에 추가’를 선택하세요. 처음 열 때 인터넷에 연결하면 이후에는 연결이 끊겨도 기록할 수 있어요. 가족 기록 연결은 인터넷이 돌아오면 이어집니다.</p><p>기록은 브라우저마다 따로 저장돼요. 다른 브라우저나 홈 화면 앱으로 옮길 때는 가족 연결 코드 또는 백업 파일을 사용해 주세요.</p></details></section><p class="version-note">습관 형성 시스템 · Habit Builder 0.5.6<br>아이의 속도에 맞춰, 우리 가족이 함께 만들어요.</p>`;
 }
 function renderCategorySettings(){
   const categories=activeCategories(state);
@@ -89,16 +89,17 @@ function categoryDeleteDialog(id){
   modal('상위 묶음을 삭제할까요?',`<form data-form="delete-category" data-id="${esc(id)}"><p>두 아이의 할 일 메뉴에서 ‘${esc(c.label)}’ 묶음을 지워요.</p>${habits.length?`<p>남아 있는 할 일 ${habits.length}개를 아래 묶음으로 옮겨요.<br>${esc(counts)}</p><label class="field">할 일을 옮길 묶음<select name="destination" required><option value="">묶음을 골라 주세요</option>${others.map(c=>`<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('')}</select></label>`:'<p>이 묶음에는 옮길 할 일이 없어요.</p>'}<p>완료한 기록과 별은 그대로 보관해요. 지난 기록에는 ‘${esc(c.label)}’ 이름이 남아요. 이 묶음의 주간 일정은 그만해요.</p>${parentCheck()}<p class="form-error" role="alert"></p><div class="dialog-actions">${btn('close','돌아가기')}<button type="submit" class="primary">${habits.length?'할 일 옮기고 묶음 삭제':'묶음 삭제'}</button></div></form>`);
 }
 function requireParent(scope=dialog){if(!scope.querySelector('[name="parentConfirmed"]')?.checked)throw new Error('부모님과 함께 확인한 뒤 표시해 주세요.');}
-function weeklyEditor(category,targetChild=childId){
-  const c=categoryInfo(state,category),plan=(state.weeklyPlans||[]).find(p=>p.childId===targetChild&&p.category===category),v=weeklyAt(plan,today())||{mode:'daily',days:[],anchorDate:today()};
+function weeklyEditor(category,targetChild=childId,targetStart=weekStart(today())){
+  const next=targetStart===addDays(weekStart(today()),7),effectiveDate=next?targetStart:today();
+  const c=categoryInfo(state,category),plan=(state.weeklyPlans||[]).find(p=>p.childId===targetChild&&p.category===category),v=weeklyAt(plan,effectiveDate)||{mode:'daily',days:[],anchorDate:effectiveDate};
   const choice=v.mode==='days'?(JSON.stringify([...v.days].sort())==='[1,3,5]'?'mwf':JSON.stringify([...v.days].sort())==='[1,2,3,4,5]'?'weekdays':'custom'):v.mode;
   const options=[['daily','매일'],['alternate','하루 걸러 격일'],['mwf','월 · 수 · 금'],['weekdays','월요일부터 금요일'],['custom','요일 직접 고르기'],...(plan?[['off','이 묶음 일정 그만하기']]:[])];
-  modal(`${esc(c.label)} · 할 날 정하기`,`<form data-form="weekly-plan" data-child="${esc(targetChild)}" data-category="${esc(category)}"><label class="field">언제 할까요?<select name="weeklyMode">${options.map(([id,label])=>`<option value="${id}" ${id===choice?'selected':''}>${label}</option>`).join('')}</select></label><div id="weekly-extra"></div><p>책 이름이나 분량은 오늘·내일 화면에서 정해요. 일정은 다음 주에도 이어져요.</p>${plan?`<p>바꾸기 전: ${esc(weeklyLabel(v))}<br>이미 적은 세부 계획과 완료 기록은 그대로 남아요.</p>${parentCheck()}`:''}<p class="form-error" role="alert"></p><div class="dialog-actions">${btn('close','돌아가기')}<button type="submit" class="primary">${plan?'함께 확인하고 저장':'일정 저장'}</button></div></form>`);
+  modal(`${esc(c.label)} · ${next?'다음 주':'이번 주'} 할 날 정하기`,`<form data-form="weekly-plan" data-child="${esc(targetChild)}" data-category="${esc(category)}" data-effective-date="${effectiveDate}"><label class="field">언제 할까요?<select name="weeklyMode">${options.map(([id,label])=>`<option value="${id}" ${id===choice?'selected':''}>${label}</option>`).join('')}</select></label><div id="weekly-extra"></div><p>책 이름이나 분량은 오늘·내일 화면에서 정해요. ${next?'다음 주 월요일부터 적용되고 그다음 주에도 이어져요.':'일정은 다음 주에도 이어져요.'}</p>${plan?`<p>바꾸기 전: ${esc(weeklyLabel(v))}<br>이미 적은 세부 계획과 완료 기록은 그대로 남아요.</p>${parentCheck()}`:''}<p class="form-error" role="alert"></p><div class="dialog-actions">${btn('close','돌아가기')}<button type="submit" class="primary">${plan?'함께 확인하고 저장':'일정 저장'}</button></div></form>`);
   renderWeeklyExtra(choice,v);
 }
-function renderWeeklyExtra(choice,v={days:[1,3,5],anchorDate:today()}){
+function renderWeeklyExtra(choice,v={days:[1,3,5]}){
   const box=dialog.querySelector('#weekly-extra');if(!box)return;
-  box.innerHTML=choice==='alternate'?`<label class="field">어느 날부터 시작할까요?<input type="date" name="anchorDate" value="${esc(v.anchorDate||today())}" required><small>이 날짜부터 하루 걸러 이어져요. 주가 바뀌어도 순서가 유지돼요.</small></label>`:choice==='custom'?`<div class="field"><span>할 요일</span><div class="days-choice">${[1,2,3,4,5,6,0].map(d=>`<label><input type="checkbox" name="weeklyDays" value="${d}" ${v.days.includes(d)?'checked':''}><span>${weekdays[d]}</span></label>`).join('')}</div></div>`:choice==='off'?'<p>앞으로 이 묶음의 빈 계획 칸이 나타나지 않아요. 이미 정한 할 일은 따로 남아요.</p>':'';
+  box.innerHTML=choice==='alternate'?`<label class="field">어느 날부터 시작할까요?<input type="date" name="anchorDate" value="${esc(v.anchorDate||dialog.querySelector('[data-form="weekly-plan"]')?.dataset.effectiveDate||today())}" required><small>이 날짜부터 하루 걸러 이어져요. 주가 바뀌어도 순서가 유지돼요.</small></label>`:choice==='custom'?`<div class="field"><span>할 요일</span><div class="days-choice">${[1,2,3,4,5,6,0].map(d=>`<label><input type="checkbox" name="weeklyDays" value="${d}" ${v.days.includes(d)?'checked':''}><span>${weekdays[d]}</span></label>`).join('')}</div></div>`:choice==='off'?'<p>앞으로 이 묶음의 빈 계획 칸이 나타나지 않아요. 이미 정한 할 일은 따로 남아요.</p>':'';
 }
 function dailyEditor(id,category,targetChild=childId,targetDay=date){
   const day=targetDay>=today()&&targetDay<=addDays(today(),1)?targetDay:today(),h=id?state.habits.find(h=>h.id===id&&h.childId===targetChild):null;
@@ -125,9 +126,10 @@ function managerAddDialog(){
   const chosen=managerFilter==='all'?childId:managerFilter;
   modal('할 일 추가',`<form data-form="manager-add"><label class="field">누구의 할 일인가요?<select name="child">${state.children.map(child=>`<option value="${esc(child.id)}" ${child.id===chosen?'selected':''}>${esc(child.name)}</option>`).join('')}</select></label><label class="field">어떤 계획인가요?<select name="kind"><option value="daily">오늘·내일의 구체적인 할 일</option><option value="weekly">이번 주의 반복 일정</option><option value="legacy">날짜·횟수를 직접 정하는 할 일</option></select></label><label class="field">상위 묶음<select name="category">${activeCategories(state).map(category=>`<option value="${esc(category.id)}">${esc(category.label)}</option>`).join('')}</select></label><label class="field" id="manager-day-field">할 날짜<select name="day"><option value="${today()}">오늘</option><option value="${addDays(today(),1)}">내일</option></select></label><p class="form-error" role="alert"></p><div class="dialog-actions">${btn('close','돌아가기')}<button type="submit" class="primary">다음</button></div></form>`);
 }
-function confirmWeeklyRemove(category,targetChild=childId){
+function confirmWeeklyRemove(category,targetChild=childId,targetStart=weekStart(today())){
+  const next=targetStart===addDays(weekStart(today()),7),effectiveDate=next?targetStart:today();
   const c=categoryInfo(state,category);
-  confirmModal('이번 주 일정을 지울까요?',`‘${esc(c.label)}’의 반복 일정을 오늘부터 그만해요. 이미 정한 날짜별 할 일과 완료 기록은 남아요.`,'weekly-remove-confirm','일정 삭제',`data-category="${esc(category)}" data-child="${esc(targetChild)}"`);
+  confirmModal(`${next?'다음':'이번'} 주 일정을 지울까요?`,`‘${esc(c.label)}’의 반복 일정을 ${next?'다음 주 월요일':'오늘'}부터 그만해요. 이미 정한 날짜별 할 일과 완료 기록은 남아요.`,'weekly-remove-confirm','일정 삭제',`data-category="${esc(category)}" data-child="${esc(targetChild)}" data-effective-date="${effectiveDate}"`);
 }
 function confirmDailyRemove(id,targetChild=childId){
   taskRemovalDialog(id,targetChild);
@@ -200,9 +202,10 @@ document.addEventListener('click',event=>{
   const el=event.target.closest('[data-action]');if(!el||el.disabled)return;const action=el.dataset.action,id=el.dataset.id;
   try{
     if(action==='close'){dialog.close();return;}
-    if(action==='weekly-edit'){weeklyEditor(el.dataset.category);return;}
-    if(action==='weekly-remove'){confirmWeeklyRemove(el.dataset.category,el.dataset.child||childId);return;}
-    if(action==='weekly-remove-confirm'){requireParent();if(commit(s=>saveWeeklyPlan(s,el.dataset.child||childId,el.dataset.category,{mode:'off'},true),'이번 주 일정을 지웠어요.'))dialog.close();return;}
+    if(action==='weekly-week'){weeklyStart=el.dataset.start;render();return;}
+    if(action==='weekly-edit'){weeklyEditor(el.dataset.category,childId,el.dataset.start);return;}
+    if(action==='weekly-remove'){confirmWeeklyRemove(el.dataset.category,el.dataset.child||childId,el.dataset.start);return;}
+    if(action==='weekly-remove-confirm'){requireParent();if(commit(s=>saveWeeklyPlan(s,el.dataset.child||childId,el.dataset.category,{mode:'off'},true,el.dataset.effectiveDate),'선택한 주의 일정을 지웠어요.'))dialog.close();return;}
     if(action==='daily-add'||action==='daily-edit'){dailyEditor(id,el.dataset.category);return;}
     if(action==='recent-material'){dialog.querySelector('[name="material"]').value=el.dataset.material;return;}
     if(action==='daily-remove'){confirmDailyRemove(id,el.dataset.child||dialog.querySelector('[data-form="daily-plan"]')?.dataset.child||childId);return;}
@@ -295,7 +298,7 @@ document.addEventListener('submit',async event=>{
       else habitEditor(null,category,targetChild);
       return;
     }
-    if(type==='weekly-plan'){const choice=data.get('weeklyMode'),mode=['mwf','weekdays','custom'].includes(choice)?'days':choice,days=choice==='mwf'?[1,3,5]:choice==='weekdays'?[1,2,3,4,5]:data.getAll('weeklyDays').map(Number);if(commit(s=>saveWeeklyPlan(s,form.dataset.child,form.dataset.category,{mode,days,anchorDate:data.get('anchorDate')},data.has('parentConfirmed')),'이번 주 할 일을 저장했어요.'))dialog.close();}
+    if(type==='weekly-plan'){const choice=data.get('weeklyMode'),mode=['mwf','weekdays','custom'].includes(choice)?'days':choice,days=choice==='mwf'?[1,3,5]:choice==='weekdays'?[1,2,3,4,5]:data.getAll('weeklyDays').map(Number);if(commit(s=>saveWeeklyPlan(s,form.dataset.child,form.dataset.category,{mode,days,anchorDate:data.get('anchorDate')},data.has('parentConfirmed'),form.dataset.effectiveDate),'선택한 주의 할 일을 저장했어요.'))dialog.close();}
     if(type==='daily-plan'){if(commit(s=>saveDailyPlan(s,form.dataset.child,id,Object.fromEntries(data),form.dataset.day,data.has('parentConfirmed')),'할 일을 정했어요.'))dialog.close();}
     if((type==='category'||type==='habit')&&id||type==='delete-category')requireParent(form);
     if(type==='category'){if(commit(s=>saveCategory(s,id,Object.fromEntries(data)),'상위 묶음을 저장했어요.'))dialog.close();}
