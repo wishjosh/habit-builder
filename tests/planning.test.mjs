@@ -112,6 +112,22 @@ test('같은 묶음의 다른 교재는 같은 날 함께 복사하고 똑같은
  saveDailyPlan(s,child,copied.id,{category:'math',material:'눈높이 수학',title:'6쪽 풀기'},wednesday,true);
  assert.equal(copied.versions.at(-1).title,'6쪽 풀기');validateState(s);
 });
+test('복사할 요일을 고르면 같은 묶음의 세부 할 일이 주간 목록에 각각 보인다',()=>{
+ const s=freshState(day),monday=addDays(weekStart(day),7),tuesday=addDays(monday,1),wednesday=addDays(monday,2),thursday=addDays(monday,3);
+ const button=(action,label,cls='',attrs='')=>`<button data-action="${action}" ${attrs}>${label}</button>`;
+ saveWeeklyPlan(s,child,'math',{mode:'daily'},false,monday);
+ saveHabit(s,child,null,{category:'math',material:'눈높이 수학',title:'4쪽 풀기',frequency:'once',dueDate:monday,points:1});const workbook=s.habits.at(-1);workbook.dailyPlan=true;
+ saveHabit(s,child,null,{category:'math',material:'기탄 수학',title:'2쪽 풀기',frequency:'once',dueDate:monday,points:1});const drill=s.habits.at(-1);drill.dailyPlan=true;
+ assert.deepEqual(copyDailyPlanToWeek(s,child,workbook.id,monday,[tuesday,wednesday,thursday]),[tuesday,wednesday,thursday]);
+ assert.deepEqual(copyDailyPlanToWeek(s,child,drill.id,monday,[wednesday]),[wednesday]);
+ assert.throws(()=>copyDailyPlanToWeek(s,child,drill.id,monday,[addDays(monday,7)]));
+ const html=weeklyScreen(s,s.children[0],button,monday);
+ assert.match(html,/정한 세부 할 일/);assert.match(html,/눈높이 수학/);assert.match(html,/기탄 수학/);
+ assert.match(html,new RegExp(`data-action="weekly-open-task"[^>]*data-day="${wednesday}"`));
+ assert.equal((html.match(new RegExp(`data-day="${wednesday}"`,'g'))||[]).length,2);
+ assert.doesNotMatch(html,/data-child="child-2"/);
+ validateState(s);
+});
 test('세부 계획 수정·삭제는 부모 확인, 완료 기록 변경 방지와 취소 허용',()=>{
  const s=freshState(day),values={category:'math',material:'눈높이 수학',title:'A1권 2쪽 풀기'};
  const id=saveDailyPlan(s,child,null,values,day);

@@ -139,10 +139,12 @@ export function weeklyCopyDates(state,child,category,day,task=null){
         &&v.material===task.material&&v.title===task.title&&(!h.archivedFrom||h.archivedFrom>next);
     })));
 }
-export function copyDailyPlanToWeek(state,child,id,day){
+export function copyDailyPlanToWeek(state,child,id,day,selectedDates=null){
   const h=state.habits.find(h=>h.id===id&&h.childId===child&&h.dailyPlan),v=h?.versions.at(-1);
   if(!v||v.dueDate!==day)throw new Error('복사할 날짜별 할 일을 찾을 수 없어요.');
-  const dates=weeklyCopyDates(state,child,v.category,day,v);
+  const available=weeklyCopyDates(state,child,v.category,day,v);
+  if(selectedDates!==null&&(!Array.isArray(selectedDates)||selectedDates.some(date=>!weeklyCopyDates(state,child,v.category,day).includes(date))))throw new Error('복사할 날을 다시 골라 주세요.');
+  const dates=selectedDates===null?available:available.filter(date=>selectedDates.includes(date));
   for(const next of dates){saveHabit(state,child,null,{...v,dueDate:next},today());state.habits.at(-1).dailyPlan=true;}
   return dates;
 }
