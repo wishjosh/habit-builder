@@ -71,7 +71,7 @@ export function plannedItems(state,base=today()){
       rows.push({kind:'daily',id:habit.id,childId:habit.childId,category:version.category,title:taskLabel(version),schedule:'날짜별 할 일',nextDate:version.dueDate,completed:Object.values(state.entries).some(entry=>entry.habitId===habit.id)});
     }else if(habit.routinePlan){
       const nextDate=nextRoutineDate(state,habit,base);
-      if(nextDate){const nextVersion=habitAt(habit,nextDate)||version;rows.push({kind:'routine',id:habit.id,childId:habit.childId,category:nextVersion.category,title:taskLabel(nextVersion),schedule:`${habit.repeatUntil?'이번 주만':'매주'} · ${frequencyLabel(nextVersion)}`,nextDate,completed:!!state.entries[`${habit.childId}/${habit.id}/${nextDate}`]});}
+      if(nextDate){const nextVersion=habitAt(habit,nextDate)||version;rows.push({kind:'routine',id:habit.id,childId:habit.childId,category:nextVersion.category,title:taskLabel(nextVersion),schedule:`${habit.repeatUntil?'한 주만':'매주'} · ${frequencyLabel(nextVersion)}`,nextDate,completed:!!state.entries[`${habit.childId}/${habit.id}/${nextDate}`]});}
     }else{
       if(version.frequency==='once'&&version.dueDate<base)continue;
       rows.push({kind:'legacy',id:habit.id,childId:habit.childId,category:version.category,title:taskLabel(version),schedule:frequencyLabel(version),nextDate:nextHabitDate(version,base)});
