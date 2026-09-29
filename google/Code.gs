@@ -9,7 +9,7 @@ function setup() {
   var sheet=SpreadsheetApp.create('습관 형성 시스템 · Habit Builder');
   sheet.getSheets()[0].setName('State');
   sheet.getSheetByName('State').getRange('A1:B1').setValues([['revision',0]]);
-  sheet.insertSheet('실천 기록').appendRow(['날짜','아이','상위 묶음','책·교재','할 일·분량','완료 기준','별']);
+  sheet.insertSheet('실천 기록').appendRow(['날짜','아이','상위 묶음','계획한 책·교재','계획한 할 일·분량','완료 기준','별','실제로 한 책·교재','실제로 한 일·분량','실제 내용 메모']);
   sheet.insertSheet('아이와 활동').appendRow(['아이','상위 묶음','책·교재','할 일·분량','완료 기준','반복','목표 횟수','별']);
   sheet.insertSheet('이전 저장');
   var key=Utilities.getUuid().replace(/-/g,'')+Utilities.getUuid().replace(/-/g,'');
@@ -49,11 +49,11 @@ function bridge(request){
 }
 function updateViews_(ss,state){
   var names={};state.children.forEach(function(c){names[c.id]=c.name;});
-  var categories={reading:'책 읽기',math:'수학',learning:'기타 학습',life:'생활 습관',movement:'몸 움직이기',art:'만들고 표현하기'};
+  var categories={reading:'책 읽기',math:'수학',learning:'기타 학습',life:'생활 습관',movement:'몸 움직이기',art:'만들고 표현하기',ungrouped:'묶음 없이'};
   (state.categories||[]).forEach(function(c){categories[c.id]=c.label;});
-  var records=[['날짜','아이','상위 묶음','책·교재','할 일·분량','완료 기준','별']];
-  Object.keys(state.entries).map(function(k){return state.entries[k];}).sort(function(a,b){return a.date.localeCompare(b.date);}).forEach(function(e){records.push([e.date,cell_(names[e.childId]),cell_(categories[e.snapshot.category]),cell_(e.snapshot.material),cell_(e.snapshot.title),cell_(e.snapshot.detail),e.points]);});
-  var logs=ss.getSheetByName('실천 기록');logs.clearContents();logs.getRange(1,1,records.length,7).setValues(records);logs.setFrozenRows(1);
+  var records=[['날짜','아이','상위 묶음','계획한 책·교재','계획한 할 일·분량','완료 기준','별','실제로 한 책·교재','실제로 한 일·분량','실제 내용 메모']];
+  Object.keys(state.entries).map(function(k){return state.entries[k];}).sort(function(a,b){return a.date.localeCompare(b.date);}).forEach(function(e){var actual=e.actual||e.snapshot;records.push([e.date,cell_(names[e.childId]),cell_(categories[e.snapshot.category]),cell_(e.snapshot.material),cell_(e.snapshot.title),cell_(e.snapshot.detail),e.points,cell_(actual.material),cell_(actual.title),cell_(e.actual&&e.actual.note)]);});
+  var logs=ss.getSheetByName('실천 기록');logs.clearContents();logs.getRange(1,1,records.length,10).setValues(records);logs.setFrozenRows(1);
   var plans=[['아이','상위 묶음','책·교재','할 일·분량','완료 기준','반복','목표 횟수','별']];
   (state.weeklyPlans||[]).forEach(function(p){var v=p.versions.slice().sort(function(a,b){return b.effectiveFrom.localeCompare(a.effectiveFrom);})[0];if(v.mode==='off')return;var label=v.mode==='daily'?'매일':v.mode==='alternate'?v.anchorDate+'부터 격일':v.days.map(function(d){return '일월화수목금토'[d];}).join(' · ');plans.push([cell_(names[p.childId]),cell_(categories[p.category]),'','주간 묶음 일정','',label,'','']);});
   state.habits.forEach(function(h){if(h.archivedFrom)return;var versions=h.versions.slice().sort(function(a,b){return b.effectiveFrom.localeCompare(a.effectiveFrom);}),v=versions[0];plans.push([cell_(names[h.childId]),cell_(categories[v.category]),cell_(v.material),cell_(v.title),cell_(v.detail),v.frequency,v.target,v.points]);});

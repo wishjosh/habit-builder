@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {freshState,today,addDays,weekStart,clone,saveWeeklyPlan,canResetStoppedWeeklyPlan,weeklyAt,weeklyDue,dailyGroupsFor,saveDailyPlan,saveRoutinePlan,updateRoutinePlan,skipRoutineDate,restoreRoutineDate,recentDailyPlans,weeklyCopyDates,copyDailyPlanToWeek,removeDailyPlan,markDone,undoDone,starSummary,entriesFor,groupRecords,recentMaterials,historyHabits,missedPlansFor,stopHabit,eraseHabit,redeem,validateState,deleteCategory,cardsFor,saveHabit,habitAt} from '../engine.js';
-import {makeBackup,readBackup,persist,STORE_KEY,BACKUP_KEY} from '../storage.js';
+import {freshState,today,addDays,weekStart,clone,saveWeeklyPlan,canResetStoppedWeeklyPlan,weeklyAt,weeklyDue,dailyGroupsFor,saveDailyPlan,saveRoutinePlan,updateRoutinePlan,skipRoutineDate,restoreRoutineDate,recentDailyPlans,weeklyCopyDates,copyDailyPlanToWeek,removeDailyPlan,markDone,undoDone,saveActual,clearActual,actualLabel,starSummary,entriesFor,groupRecords,recentMaterials,historyHabits,missedPlansFor,stopHabit,eraseHabit,redeem,validateState,deleteCategory,cardsFor,saveHabit,habitAt} from '../engine.js';
+import {makeBackup,readBackup,persist,toCSV,STORE_KEY,BACKUP_KEY} from '../storage.js';
 import {plannedItems,pastItems,taskManagerScreen,weeklyScreen} from '../planner-ui.js';
 import {sampleState} from './fixtures.mjs';
 const day=today(),tomorrow=addDays(day,1),child='child-1';
@@ -47,6 +47,21 @@ test('묶음 없는 일기는 직접 완료하고 수정할 수 있는 날짜별
  assert.equal(entriesFor(s,child,day,day)[0].snapshot.title,'오늘 기억나는 일 한 줄 쓰기');
  assert.equal(starSummary(s,child).balance,1);
  validateState(s);
+});
+test('계획한 레슨 1개와 실제로 푼 2개를 함께 기록하고 별은 한 번만 받는다',()=>{
+ const s=freshState(day),id=saveDailyPlan(s,child,null,{category:'learning',title:'눈높이 영어 레슨 1개 풀기'},day);
+ assert.throws(()=>saveActual(s,child,id,day,{title:'2개 풀기'}),/완료/);
+ markDone(s,child,id,day);
+ saveActual(s,child,id,day,{title:'눈높이 영어 레슨 2개 풀기',note:'레슨 1개 더 풀었어요'});
+ const entry=entriesFor(s,child,day,day)[0];
+ assert.equal(entry.snapshot.title,'눈높이 영어 레슨 1개 풀기');
+ assert.equal(actualLabel(entry),'눈높이 영어 레슨 2개 풀기');
+ assert.equal(starSummary(s,child).balance,1);
+ assert.match(toCSV(s),/눈높이 영어 레슨 1개 풀기.*눈높이 영어 레슨 2개 풀기/);
+ assert.equal(readBackup(makeBackup(s)).entries[`${child}/${id}/${day}`].actual.title,'눈높이 영어 레슨 2개 풀기');
+ clearActual(s,child,id,day);
+ assert.equal(actualLabel(entriesFor(s,child,day,day)[0]),'눈높이 영어 레슨 1개 풀기');
+ assert.equal(starSummary(s,child).balance,1);
 });
 test('수학을 평일 5일로 정하면 세부 할 일 없이 예정일마다 한 항목이 생긴다',()=>{
  const s=freshState(day);

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 const version=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;
 for(const name of ['app.js','planner-ui.js','index.html','sw.js']){
   const content=readFileSync(new URL(`../${name}`,import.meta.url),'utf8');
-  const found=[...content.matchAll(/\b0\.\d+\.\d+\b/g)].map(match=>match[0]);
+  const found=[...content.matchAll(/\b0\.\d+(?:\.\d+)?\b/g)].map(match=>match[0]);
   assert.ok(found.length,`${name}: 앱 버전 표기가 없습니다.`);
   assert.ok(found.every(value=>value===version),`${name}: ${version}과 다른 버전 표기가 있습니다: ${[...new Set(found)].join(', ')}`);
 }

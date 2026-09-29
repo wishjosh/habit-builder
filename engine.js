@@ -312,6 +312,21 @@ export function undoDone(state,child,habitId,date) {
   const key=entryKey(child,habitId,date); if(!state.entries[key]) return false;
   delete state.entries[key]; touch(state); return true;
 }
+export function saveActual(state,child,habitId,date,values){
+  const entry=state.entries[entryKey(child,habitId,date)];
+  if(!entry||!isDate(date)||date>today())throw new Error('완료한 할 일의 날짜를 확인해 주세요.');
+  const title=String(values.title||'').trim(),material=String(values.material||'').trim(),note=String(values.note||'').trim();
+  if(!title||title.length>60)throw new Error('실제로 한 일을 1~60자로 적어 주세요.');
+  if(material.length>100||note.length>160)throw new Error('책·교재 이름이나 메모가 너무 길어요.');
+  entry.actual={title,material,note,updatedAt:new Date().toISOString()};
+  touch(state);
+}
+export function clearActual(state,child,habitId,date){
+  const entry=state.entries[entryKey(child,habitId,date)];
+  if(!entry)throw new Error('완료 기록을 찾을 수 없어요.');
+  delete entry.actual;touch(state);
+}
+export function actualLabel(entry){return taskLabel(entry.actual||entry.snapshot);}
 export function touch(state) { state.updatedAt=new Date().toISOString(); }
 export function starSummary(state,child) {
   const earned=entriesFor(state,child).reduce((n,e)=>n+e.points,0);
@@ -361,7 +376,7 @@ export function groupByCategory(items,configOf=x=>x,state){
 export function groupRecords(records,state){
   return groupByCategory(records,e=>e.snapshot,state).map(group=>{
     const materials=new Map();
-    for(const entry of group.items){const title=entry.snapshot.material||entry.snapshot.title;const key=(entry.snapshot.material?'material:':'task:')+title;
+    for(const entry of group.items){const actual=entry.actual||entry.snapshot,title=actual.material||actual.title;const key=(actual.material?'material:':'task:')+title;
       if(!materials.has(key))materials.set(key,{key,title,entries:[]});materials.get(key).entries.push(entry);
     }
     return {...group,materials:[...materials.values()].map(item=>({...item,entries:item.entries.sort((a,b)=>b.date.localeCompare(a.date))}))};
@@ -397,7 +412,7 @@ export function validateState(s) {
   }
   if(Object.keys(s.entries).length>50000||s.redemptions.length>10000||s.rewards.length>200)fail();
   for(const v of s.habits.flatMap(h=>h.versions).concat(Object.values(s.entries).map(e=>e?.snapshot))){if(v?.material!==undefined&&(typeof v.material!=='string'||v.material.length>100))fail();}
-  for(const [key,e] of Object.entries(s.entries)){const h=s.habits.find(h=>h.id===e.habitId);if(!ids.has(e.childId)||!h||h.childId!==e.childId||!isDate(e.date)||key!==entryKey(e.childId,e.habitId,e.date)||!Number.isInteger(e.points)||e.points<0||e.points>20||!e.snapshot||!short(e.snapshot.title,60)||!categoryIds.has(e.snapshot.category)||!['daily','weekdays','alternate','weekly','monthly','once'].includes(e.snapshot.frequency)||!Array.isArray(e.snapshot.days)||!Number.isInteger(e.snapshot.target)||typeof e.snapshot.detail!=='string')fail();}
+  for(const [key,e] of Object.entries(s.entries)){const h=s.habits.find(h=>h.id===e.habitId);if(!ids.has(e.childId)||!h||h.childId!==e.childId||!isDate(e.date)||key!==entryKey(e.childId,e.habitId,e.date)||!Number.isInteger(e.points)||e.points<0||e.points>20||!e.snapshot||!short(e.snapshot.title,60)||!categoryIds.has(e.snapshot.category)||!['daily','weekdays','alternate','weekly','monthly','once'].includes(e.snapshot.frequency)||!Array.isArray(e.snapshot.days)||!Number.isInteger(e.snapshot.target)||typeof e.snapshot.detail!=='string')fail();if(e.actual!==undefined&&(!e.actual||!short(e.actual.title,60)||!e.actual.title.trim()||typeof e.actual.material!=='string'||e.actual.material.length>100||typeof e.actual.note!=='string'||e.actual.note.length>160||!Number.isFinite(Date.parse(e.actual.updatedAt))))fail();}
   for(const r of s.rewards){if(!short(r.id,100)||!short(r.title,60)||!Number.isInteger(r.cost)||r.cost<1||r.cost>9999)fail();}
   for(const r of s.redemptions){if(!short(r.id,100)||!ids.has(r.childId)||!short(r.title,60)||!Number.isInteger(r.cost)||r.cost<1||r.cost>9999||!Number.isFinite(Date.parse(r.at)))fail();}
   for(const [k,v] of Object.entries(s.restDays)){const [child,date]=k.split('/');if(!ids.has(child)||!isDate(date)||typeof v!=='boolean')fail();}
