@@ -21,13 +21,41 @@ test('설정 목록은 두 아이의 주간·날짜별·기존 반복 계획을 
  const byCategory=taskManagerScreen(s,'category','all',button,day);
  assert.match(byCategory,/상위 묶음별/);assert.match(byCategory,/정리하기/);
 });
-test('묶음 일정만 정하면 빈 세부 계획 칸이 나오고, 아이별로 분리',()=>{
+test('묶음 일정만 정해도 그날 한 번 완료할 수 있고, 아이별로 분리',()=>{
  const s=freshState(day);assert.equal(s.habits.length,0);
  saveWeeklyPlan(s,child,'reading',{mode:'daily'});
- assert.equal(dailyGroupsFor(s,child,day)[0].items.length,0);
+ assert.equal(dailyGroupsFor(s,child,day)[0].items.length,1);
  assert.equal(dailyGroupsFor(s,child,tomorrow)[0].id,'reading');
  assert.equal(dailyGroupsFor(s,'child-2',day).length,0);
- assert.throws(()=>markDone(s,child,s.weeklyPlans[0].id,day));assert.equal(starSummary(s,child).balance,0);
+ const fallback=dailyGroupsFor(s,child,day)[0].items[0];
+ assert.equal(fallback.config.title,'책 읽기');
+ assert.equal(markDone(s,child,fallback.habit.id,day),true);
+ assert.equal(markDone(s,child,fallback.habit.id,day),false);
+ assert.equal(starSummary(s,child).balance,1);
+ assert.throws(()=>saveDailyPlan(s,child,null,{category:'reading',material:'다른 책',title:'읽기'},day),/완료를 취소/);
+ assert.equal(readBackup(makeBackup(s)).entries[`${child}/${fallback.habit.id}/${day}`].points,1);
+ undoDone(s,child,fallback.habit.id,day);
+ const detail=saveDailyPlan(s,child,null,{category:'reading',material:'톰 소여',title:'1장 읽기'},day);
+ assert.deepEqual(dailyGroupsFor(s,child,day)[0].items.map(item=>item.habit.id),[detail]);
+ assert.throws(()=>markDone(s,child,fallback.habit.id,day),/세부 할 일/);
+});
+test('묶음 없는 일기는 직접 완료하고 수정할 수 있는 날짜별 할 일로 저장된다',()=>{
+ const s=freshState(day),id=saveDailyPlan(s,child,null,{category:'ungrouped',title:'일기 쓰기'},day);
+ assert.equal(dailyGroupsFor(s,child,day).find(group=>group.id==='ungrouped').items[0].habit.id,id);
+ saveDailyPlan(s,child,id,{category:'ungrouped',title:'오늘 기억나는 일 한 줄 쓰기'},day,true);
+ markDone(s,child,id,day);
+ assert.equal(entriesFor(s,child,day,day)[0].snapshot.title,'오늘 기억나는 일 한 줄 쓰기');
+ assert.equal(starSummary(s,child).balance,1);
+ validateState(s);
+});
+test('수학을 평일 5일로 정하면 세부 할 일 없이 예정일마다 한 항목이 생긴다',()=>{
+ const s=freshState(day);
+ saveWeeklyPlan(s,child,'math',{mode:'days',days:[1,2,3,4,5]});
+ const monday=addDays(weekStart(day),7),saturday=addDays(monday,5);
+ assert.equal(dailyGroupsFor(s,child,monday).find(group=>group.id==='math').items.length,1);
+ assert.equal(dailyGroupsFor(s,child,saturday).length,0);
+ const fallback=cardsFor(s,child,day).find(card=>card.config.category==='math');
+ if(fallback){markDone(s,child,fallback.habit.id,day);assert.equal(starSummary(s,child).balance,1);}
 });
 test('월수금과 격일은 달·주·연도 경계를 넘어 일정 유지',()=>{
  const days={mode:'days',days:[1,3,5]};
