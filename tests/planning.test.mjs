@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {freshState,today,addDays,weekStart,clone,saveWeeklyPlan,canResetStoppedWeeklyPlan,weeklyAt,weeklyDue,dailyGroupsFor,saveDailyPlan,saveRoutinePlan,updateRoutinePlan,skipRoutineDate,restoreRoutineDate,recentDailyPlans,weeklyCopyDates,copyDailyPlanToWeek,removeDailyPlan,markDone,undoDone,saveActual,clearActual,actualLabel,starSummary,entriesFor,groupRecords,recentMaterials,historyHabits,missedPlansFor,stopHabit,eraseHabit,redeem,validateState,deleteCategory,cardsFor,saveHabit,habitAt} from '../engine.js';
+import {freshState,today,addDays,weekStart,clone,saveCategory,saveWeeklyPlan,canResetStoppedWeeklyPlan,weeklyAt,weeklyDue,dailyGroupsFor,saveDailyPlan,saveRoutinePlan,updateRoutinePlan,skipRoutineDate,restoreRoutineDate,recentDailyPlans,weeklyCopyDates,copyDailyPlanToWeek,removeDailyPlan,markDone,undoDone,saveActual,clearActual,actualLabel,starSummary,entriesFor,groupRecords,recentMaterials,historyHabits,missedPlansFor,stopHabit,eraseHabit,redeem,validateState,deleteCategory,cardsFor,saveHabit,habitAt} from '../engine.js';
 import {makeBackup,readBackup,persist,toCSV,STORE_KEY,BACKUP_KEY} from '../storage.js';
 import {plannedItems,pastItems,taskManagerScreen,weeklyScreen} from '../planner-ui.js';
 import {sampleState} from './fixtures.mjs';
@@ -38,6 +38,18 @@ test('묶음 일정만 정해도 그날 한 번 완료할 수 있고, 아이별�
  const detail=saveDailyPlan(s,child,null,{category:'reading',material:'톰 소여',title:'1장 읽기'},day);
  assert.deepEqual(dailyGroupsFor(s,child,day)[0].items.map(item=>item.habit.id),[detail]);
  assert.throws(()=>markDone(s,child,fallback.habit.id,day),/세부 할 일/);
+});
+test('일기 묶음 자체를 반복 할 일로 사용하고 세부 항목 없이 완료한다',()=>{
+ const s=freshState(day),diary=saveCategory(s,null,{label:'일기',type:'life'});
+ saveWeeklyPlan(s,child,diary,{mode:'daily'});
+ const group=dailyGroupsFor(s,child,day).find(item=>item.id===diary);
+ assert.equal(group.items.length,1);
+ assert.equal(group.items[0].config.title,'일기');
+ assert.equal(group.items[0].habit.weeklyFallbackFor!==undefined,true);
+ markDone(s,child,group.items[0].habit.id,day);
+ assert.equal(entriesFor(s,child,day,day)[0].snapshot.title,'일기');
+ assert.equal(starSummary(s,child).balance,1);
+ validateState(s);
 });
 test('묶음 없는 일기는 직접 완료하고 수정할 수 있는 날짜별 할 일로 저장된다',()=>{
  const s=freshState(day),id=saveDailyPlan(s,child,null,{category:'ungrouped',title:'일기 쓰기'},day);
