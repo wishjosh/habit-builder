@@ -1,5 +1,5 @@
 // Shared task operations. Legacy plans are adapted here; every screen uses this API.
-import {UNGROUPED,clone,uid,today,isDate,addDays,weekStart,monthDays,habitAt,weeklyAt,weeklyDue,cardsFor,categoryInfo,activeCategories,entryKey,entriesFor,saveActual,taskLabel,touch} from './engine.js?v=0.3';
+import {UNGROUPED,clone,uid,today,isDate,addDays,weekStart,monthDays,habitAt,weeklyAt,weeklyDue,cardsFor,categoryInfo,activeCategories,entryKey,entriesFor,saveActual,taskLabel,touch} from './engine.js?v=0.4';
 
 export const THEMES=[
  {id:'literacy',label:'문해력',childLabel:'책과 가까워지기',type:'reading',icon:'book',color:'peach'},

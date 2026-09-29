@@ -1,4 +1,4 @@
-import {themes,themeFor} from './work.js?v=0.3';
+import {themes,themeFor} from './work.js?v=0.4';
 import {activeCategories,groupByCategory,groupRecords,habitAt,today,taskLabel,frequencyLabel} from './engine.js';
 import {esc,icon} from './ui.js';
 

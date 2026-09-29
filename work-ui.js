@@ -1,5 +1,5 @@
-import {starSummary,today,addDays,weekStart,datesBetween,habitAt,taskLabel,frequencyLabel,entryKey,entriesFor,categoryInfo} from './engine.js?v=0.3';
-import {THEMES,themes,themeFor,taskRows,taskConfig,flexibleTasks} from './work.js?v=0.3';
+import {starSummary,today,addDays,weekStart,datesBetween,habitAt,taskLabel,frequencyLabel,entryKey,entriesFor,categoryInfo} from './engine.js?v=0.4';
+import {THEMES,themes,themeFor,taskRows,taskConfig,flexibleTasks} from './work.js?v=0.4';
 import {esc,icon} from './ui.js';
 const weekdays=['일','월','화','수','목','금','토'];
 const dateLabel=d=>`${Number(d.slice(5,7))}/${Number(d.slice(8))} ${weekdays[new Date(d+'T12:00:00').getDay()]}`;

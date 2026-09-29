@@ -1,4 +1,4 @@
-import {themeFor} from './work.js?v=0.3';
+import {themeFor} from './work.js?v=0.4';
 import {freshState,validateState,categoryInfo} from './engine.js';
 export const STORE_KEY='habit-builder:state:v1';
 export const BACKUP_KEY='habit-builder:previous:v1';
