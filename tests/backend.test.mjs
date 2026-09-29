@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {createHash} from 'node:crypto';
 import {freshState,saveCategory,saveHabit,markDone,saveActual,deleteCategory,saveWeeklyPlan,saveDailyPlan,eraseHabit,today,addDays} from '../engine.js';
+import {saveTask,assignFlexible,completeTask,removeTask,restoreTask,saveTheme} from '../work.js';
 function backend(){
  const sheets=new Map();
  const mk=(name)=>{
@@ -71,4 +72,14 @@ test('잘못 만든 할 일을 지운 상태는 시트의 현재 기록과 실�
  assert.equal(ctx.bridge({action:'read',key}).state.entries[`child-1/${id}/${today()}`],undefined);
  assert.equal(sheets.get('실천 기록').getDataRange().getValues().length,1);
  assert.equal(ctx.readSnapshot_(sheets.get('이전 저장')).state.habits.length,1);
+});
+test('공통 할 일·성장 주제·휴지통은 기존 Google 원본 저장소에서 손실 없이 왕복한다',()=>{
+ const {ctx,key,sheets}=backend(),state=freshState();
+ const id=saveTask(state,'child-1',null,today(),{title:'함께 읽기',frequency:'weekly',target:2,themeId:'literacy',until:'ongoing'});
+ saveTheme(state,null,{label:'함께하기',childLabel:'서로 도와요'});assignFlexible(state,'child-1',id,today());completeTask(state,'child-1',id,today());
+ ctx.bridge({action:'write',key,revision:0,state});
+ assert.equal(JSON.stringify(ctx.bridge({action:'read',key}).state),JSON.stringify(state));
+ removeTask(state,'child-1',id,today(),'all',true);ctx.bridge({action:'write',key,revision:1,state});
+ assert.equal(sheets.get('실천 기록').getDataRange().getValues().length,1);
+ const remote=JSON.parse(JSON.stringify(ctx.bridge({action:'read',key}).state));restoreTask(remote,remote.taskTrash[0].id,true);assert.equal(Object.keys(remote.entries).length,1);
 });

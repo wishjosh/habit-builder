@@ -1,3 +1,4 @@
+import {themes,themeFor} from './work.js?v=0.3';
 import {activeCategories,groupByCategory,groupRecords,habitAt,today,taskLabel,frequencyLabel} from './engine.js';
 import {esc,icon} from './ui.js';
 
@@ -12,7 +13,11 @@ export function todayGroups(cards,child,date,renderCard,addButton,state){
 }
 export function recordGroups(entries,scope,renderTimeline,state){
   if(!entries.length)return '<div class="empty">실천한 책과 할 일이 이곳에 모여요.</div>';
-  return groupRecords(entries,state).map(group=>fold(`${scope}/${group.id}`,`${icon(group.icon)}${esc(group.label)}`,`${group.items.length}번 실천`,group.materials.map(material=>fold(`${scope}/${group.id}/${material.key}`,esc(material.title),`${material.entries.length}번 기록`,renderTimeline(material.entries),false,'material-group')).join(''),true)).join('');
+  return themes(state,true).map(theme=>{
+    const rows=entries.filter(e=>themeFor(state,e.snapshot).id===theme.id);if(!rows.length)return '';
+    const materials=new Map();for(const e of rows){const title=e.actual?.material||e.snapshot.material||e.actual?.title||e.snapshot.title;if(!materials.has(title))materials.set(title,[]);materials.get(title).push(e);}
+    return fold(`${scope}/${theme.id}`,`${icon(theme.icon)}${esc(theme.childLabel)}`,`${rows.length}번 실천`,[...materials].map(([title,list])=>fold(`${scope}/${theme.id}/${title}`,esc(title),`${list.length}번 기록`,renderTimeline(list.sort((a,b)=>b.date.localeCompare(a.date))),false,'material-group')).join(''));
+  }).join('');
 }
 export function parentGroups(habits,child,button,state){
   return activeCategories(state).map(cat=>{

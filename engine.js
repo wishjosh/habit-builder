@@ -71,7 +71,14 @@ export function freshState(date=today()) {
   ], redemptions: [], notes: {} };
   return state;
 }
-export function habitAt(habit,date) { if(habit.archivedFrom && date>=habit.archivedFrom||habit.repeatUntil&&date>=habit.repeatUntil||habit.skippedDates?.includes(date)) return null; return [...habit.versions].filter(v=>v.effectiveFrom<=date).sort((a,b)=>b.effectiveFrom.localeCompare(a.effectiveFrom))[0] || null; }
+export function habitAt(habit,date) {
+  if(habit.omittedDates?.includes(date)||habit.archivedFrom&&date>=habit.archivedFrom||habit.skippedDates?.includes(date))return null;
+  const change=habit.dayChanges?.[date];
+  if(habit.repeatUntil&&date>=habit.repeatUntil&&!change?.dueDate)return null;
+  const base=[...habit.versions].filter(v=>v.effectiveFrom<=date).sort((a,b)=>b.effectiveFrom.localeCompare(a.effectiveFrom))[0];
+  if(base?.untilDate&&date>=base.untilDate&&!change?.dueDate)return null;
+  return base?{...base,...change}:change?.dueDate?{...habit.versions[0],...change}:null;
+}
 export function weeklyAt(plan,date){return plan?[...plan.versions].filter(v=>v.effectiveFrom<=date).sort((a,b)=>b.effectiveFrom.localeCompare(a.effectiveFrom))[0]||null:null;}
 export function weeklyDue(v,date){
   if(!v||v.mode==='off')return false;
@@ -406,9 +413,10 @@ export function validateState(s) {
     weeklyIds.add(p.id);weeklyPairs.add(`${p.childId}/${p.category}`);const dates=new Set();
     for(const v of p.versions){if(!v||!isDate(v.effectiveFrom)||dates.has(v.effectiveFrom)||!['daily','days','alternate','off'].includes(v.mode)||!Array.isArray(v.days)||v.days.some(d=>!Number.isInteger(d)||d<0||d>6)||v.mode==='days'&&!v.days.length||!isDate(v.anchorDate))fail();dates.add(v.effectiveFrom);}
   }
+  if(s.themes!==undefined){if(!Array.isArray(s.themes)||!s.themes.length||s.themes.length>500||!s.themes.some(t=>!t.archived)||new Set(s.themes.map(t=>t.id)).size!==s.themes.length)fail();for(const t of s.themes)if(!t||!short(t.id,100)||!(/^[a-zA-Z0-9_-]+$/).test(t.id)||!short(t.label,30)||!short(t.childLabel,40)||!['book','pencil','sun','music','leaf','move'].includes(t.icon)||!['peach','mint','lavender','yellow','pink'].includes(t.color)||t.archived!==undefined&&typeof t.archived!=='boolean')fail();}
   const habits=new Set();
   for(const h of s.habits){if(!short(h.id,100)||habits.has(h.id)||!ids.has(h.childId)||!Array.isArray(h.versions)||!h.versions.length||h.versions.length>1000||h.archivedFrom&&!isDate(h.archivedFrom)||h.repeatUntil&&!isDate(h.repeatUntil))fail();habits.add(h.id);
-    for(const v of h.versions){if(!isDate(v.effectiveFrom)||!short(v.title,60)||typeof v.detail!=='string'||v.detail.length>160||!categoryIds.has(v.category)||!['daily','weekdays','alternate','weekly','monthly','once'].includes(v.frequency)||!Array.isArray(v.days)||v.days.some(d=>!Number.isInteger(d)||d<0||d>6)||v.frequency==='weekdays'&&!v.days.length||v.frequency==='alternate'&&!isDate(v.anchorDate)||!Number.isInteger(v.target)||v.target<1||v.target>31||v.frequency==='weekly'&&v.target>7||!Number.isInteger(v.points)||v.points<0||v.points>20||v.frequency==='once'&&!isDate(v.dueDate))fail();}
+    for(const v of h.versions){if(v.untilDate!==undefined&&!isDate(v.untilDate)||!isDate(v.effectiveFrom)||!short(v.title,60)||typeof v.detail!=='string'||v.detail.length>160||!categoryIds.has(v.category)||!['daily','weekdays','alternate','weekly','monthly','once'].includes(v.frequency)||!Array.isArray(v.days)||v.days.some(d=>!Number.isInteger(d)||d<0||d>6)||v.frequency==='weekdays'&&!v.days.length||v.frequency==='alternate'&&!isDate(v.anchorDate)||!Number.isInteger(v.target)||v.target<1||v.target>31||v.frequency==='weekly'&&v.target>7||!Number.isInteger(v.points)||v.points<0||v.points>20||v.frequency==='once'&&!isDate(v.dueDate))fail();}
   }
   if(Object.keys(s.entries).length>50000||s.redemptions.length>10000||s.rewards.length>200)fail();
   for(const v of s.habits.flatMap(h=>h.versions).concat(Object.values(s.entries).map(e=>e?.snapshot))){if(v?.material!==undefined&&(typeof v.material!=='string'||v.material.length>100))fail();}
@@ -420,8 +428,14 @@ export function validateState(s) {
   const overrides=new Set();
   for(const h of s.habits){
     if(h.weeklyFallbackFor!==undefined&&(!weeklyIds.has(h.weeklyFallbackFor)||h.id!==`weekly-${h.weeklyFallbackFor}`||s.weeklyPlans.find(p=>p.id===h.weeklyFallbackFor)?.childId!==h.childId))fail();
-    if(h.dailyPlan!==undefined&&typeof h.dailyPlan!=='boolean'||h.dailyPlan&&h.versions.some(v=>v.frequency!=='once')||h.routinePlan!==undefined&&typeof h.routinePlan!=='boolean'||h.routinePlan&&h.versions.some(v=>!['daily','weekdays','alternate'].includes(v.frequency))||h.repeatUntil&&!h.routinePlan||h.replacesHabitId&&!h.dailyPlan||h.repeatScope!==undefined&&(!h.routinePlan||!['week','date','ongoing'].includes(h.repeatScope))||h.skippedDates!==undefined&&(!h.routinePlan||!Array.isArray(h.skippedDates)||h.skippedDates.length>1000||new Set(h.skippedDates).size!==h.skippedDates.length||h.skippedDates.some(date=>!isDate(date))))fail();
-    if(h.replacesHabitId){const parent=s.habits.find(item=>item.id===h.replacesHabitId),date=h.versions.at(-1).dueDate,key=`${h.replacesHabitId}/${date}`,active=!h.archivedFrom||h.archivedFrom>date||!!s.entries[entryKey(h.childId,h.id,date)];if(!parent?.routinePlan||parent.childId!==h.childId||active&&overrides.has(key))fail();if(active)overrides.add(key);}
+    if(h.dailyPlan!==undefined&&typeof h.dailyPlan!=='boolean'||h.dailyPlan&&h.versions.some(v=>v.frequency!=='once')||h.routinePlan!==undefined&&typeof h.routinePlan!=='boolean'||h.routinePlan&&h.versions.some(v=>!['daily','weekdays','alternate'].includes(v.frequency))||h.repeatUntil&&!h.routinePlan&&!h.unified||h.replacesHabitId&&!h.dailyPlan||h.repeatScope!==undefined&&(!h.routinePlan||!['week','date','ongoing'].includes(h.repeatScope))||h.skippedDates!==undefined&&(!h.routinePlan&&!h.unified||!Array.isArray(h.skippedDates)||h.skippedDates.length>1000||new Set(h.skippedDates).size!==h.skippedDates.length||h.skippedDates.some(date=>!isDate(date))))fail();
+    if(h.replacesHabitId){const parent=s.habits.find(item=>item.id===h.replacesHabitId),date=h.versions.at(-1).dueDate,key=`${h.replacesHabitId}/${date}`,active=!h.archivedFrom||h.archivedFrom>date||!!s.entries[entryKey(h.childId,h.id,date)];if((!parent?.routinePlan&&!parent?.unified)||parent.childId!==h.childId||active&&overrides.has(key))fail();if(active)overrides.add(key);}
   }
+  for(const h of s.habits){
+    if(h.unified!==undefined&&typeof h.unified!=='boolean')fail();
+    for(const name of ['scheduledDates','omittedDates'])if(h[name]!==undefined&&(!Array.isArray(h[name])||h[name].length>5000||h[name].some(d=>!isDate(d))||new Set(h[name]).size!==h[name].length))fail();
+    if(h.dayChanges!==undefined){if(!h.dayChanges||typeof h.dayChanges!=='object'||Array.isArray(h.dayChanges)||Object.keys(h.dayChanges).length>5000)fail();for(const [day,v] of Object.entries(h.dayChanges)){if(!isDate(day)||!v||typeof v!=='object'||Object.keys(v).some(k=>!['effectiveFrom','title','material','detail','category','themeId','frequency','days','target','points','anchorDate','dueDate','untilDate'].includes(k))||v.title!==undefined&&!short(v.title,60)||v.material!==undefined&&(typeof v.material!=='string'||v.material.length>100)||v.detail!==undefined&&(typeof v.detail!=='string'||v.detail.length>160)||v.category!==undefined&&!categoryIds.has(v.category)||v.dueDate!==undefined&&!isDate(v.dueDate))fail();}}
+  }
+  if(s.taskTrash!==undefined&&(!Array.isArray(s.taskTrash)||s.taskTrash.length>10000||s.taskTrash.some(x=>!x||!short(x.id,100)||!ids.has(x.childId)||!short(x.title,200)||!['day','all'].includes(x.kind)||!Number.isFinite(Date.parse(x.at))||x.kind==='day'&&(!isDate(x.day)||!short(x.habitId,100))||x.kind==='all'&&(!Array.isArray(x.habits)||!Array.isArray(x.plans)||!Array.isArray(x.records)))))fail();
   return clone({...s,categories,weeklyPlans});
 }

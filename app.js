@@ -1,26 +1,20 @@
-import {weeklyScreen,dailyScreenGroups,parentCheck,planPageSwitch,taskManagerScreen} from './planner-ui.js?v=0.3';
-import {UNGROUPED,ZODIAC_AVATARS,weeklyAt,weeklyLabel,saveWeeklyPlan,saveDailyPlan,saveRoutinePlan,updateRoutinePlan,skipRoutineDate,restoreRoutineDate,recentMaterials,recentDailyPlans,weeklyCopyDates,copyDailyPlanToWeek,historyHabits,missedPlansFor,stopHabit,eraseHabit,activeCategories,categoryInfo,saveCategory,moveCategory,deleteCategory,categoryHabits,today,dateObj,addDays,weekStart,monthDays,datesBetween,uid,clone,freshState,habitAt,entriesFor,cardsFor,markDone,undoDone,saveActual,clearActual,actualLabel,starSummary,redeem,removeReward,cancelRedemption,saveHabit,frequencyLabel,touch,validateState,taskLabel,groupByCategory} from './engine.js?v=0.3';
-import * as weeklyEngine from './engine.js?v=0.3';
+import {parentCheck} from './planner-ui.js?v=0.3';
+import {workspace,editorBody} from './work-ui.js?v=0.3';
+import {themes,saveTheme,moveTheme,removeTheme,themeFor,taskRows,taskConfig,saveTask,completeTask,assignFlexible,removeTask,restoreTask} from './work.js?v=0.3';
+import {ZODIAC_AVATARS,activeCategories,categoryInfo,saveCategory,moveCategory,deleteCategory,categoryHabits,today,dateObj,addDays,weekStart,monthDays,datesBetween,uid,clone,entriesFor,undoDone,actualLabel,starSummary,redeem,removeReward,cancelRedemption,saveHabit,touch,validateState,taskLabel} from './engine.js?v=0.3';
 import {loadState,persist,makeBackup,readBackup,toCSV,STORE_KEY,BACKUP_KEY} from './storage.js';
-import {icon,avatar,garden,esc} from './ui.js';
+import {icon,avatar,esc} from './ui.js';
 import {rememberFolds,fold,recordGroups} from './hierarchy.js';
 import {SheetBridge,readCloudConfig,saveCloudConfig,encodeConnection,decodeConnection} from './cloud.js';
 
 const root=document.querySelector('#app'),dialog=document.querySelector('#dialog');
 const loaded=loadState();let state=loaded.state;
-let page='today',childId=state?.children[0].id,date=today(),weeklyStart=weekStart(today()),recordTab='week',recordMonth=today().slice(0,7),selectedCalendarDay=today(),managerView='date',managerFilter='all',managerScope='current';
+let page='work',workView='day',listMode='current',listGroup='date',childId=state?.children[0].id,date=today(),weeklyStart=weekStart(today()),recordTab='week',recordMonth=today().slice(0,7),selectedCalendarDay=today();
 let toastTimer,cloud=null,cloudConfig=readCloudConfig(),syncBusy=false,cloudMessage='',generation=0,lastSaved=null,selectedAvatar='fox';
 const weekdays=['일','월','화','수','목','금','토'];
-const navItems=[['today','home','오늘'],['weekly','calendar','이번 주'],['tasks','check','할 일 관리'],['records','chart','내 기록'],['rewards','star','별 모으기'],['parent','settings','설정']];
+const navItems=[['work','home','할 일'],['records','chart','내 기록'],['rewards','star','별 모으기'],['parent','settings','설정']];
 const child=()=>state.children.find(c=>c.id===childId)||state.children[0];
 const fmt=d=>`${Number(d.slice(5,7))}월 ${Number(d.slice(8))}일 ${weekdays[dateObj(d).getDay()]}요일`;
-const canResetStoppedWeeklyPlan=weeklyEngine.canResetStoppedWeeklyPlan||((s,targetChild,category)=>{
-  const plan=(s.weeklyPlans||[]).find(p=>p.childId===targetChild&&p.category===category);
-  return !!plan&&weeklyAt(plan,today())?.mode==='off'
-    &&!plan.versions.some(v=>v.effectiveFrom>today()&&v.mode!=='off')
-    &&!s.habits.some(h=>h.childId===targetChild&&h.versions.some(v=>v.category===category))
-    &&!Object.values(s.entries).some(e=>e.childId===targetChild&&e.snapshot.category===category);
-});
 const restKey=d=>`${childId}/${d}`;
 function toast(message){const el=document.querySelector('#toast');el.textContent=message;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),3400);}
 function btn(action,label,cls='secondary',attrs=''){return `<button type="button" class="${cls}" data-action="${action}" ${attrs}>${label}</button>`;}
@@ -33,28 +27,11 @@ function render(){
   if(!state){renderRecovery();return;}
   if(!state.children.some(c=>c.id===childId))childId=state.children[0].id;
   rememberFolds(root);
-  const html=page==='today'?renderToday():page==='weekly'?weeklyScreen(state,child(),btn,weeklyStart):page==='tasks'?renderTasks():page==='records'?renderRecords():page==='rewards'?renderRewards():renderParent();
+  const html=page==='work'?workspace(state,childId,{view:workView,day:date,week:weeklyStart,listMode,listGroup,saveLabel:saveLabel()},btn):page==='records'?renderRecords():page==='rewards'?renderRewards():renderParent();
   root.innerHTML=`<div class="shell"><aside class="sidebar">${brand()}${navigation('nav')}<div class="sidebar-bottom"><div class="sprout">${icon('leaf')}<br>하루의 작은 실천이<br>나만의 습관이 되어요.</div>우리 가족의 작은 성장 기록<br>Habit Builder · 0.3</div></aside><div class="content"><header class="topbar"><div class="desktop-date"><div class="eyebrow">OUR LITTLE EVERYDAY</div><div class="date-label">${today().slice(0,4)}년 ${fmt(today())}</div></div>${brand(true)}<div class="profile-switch" aria-label="아이 선택">${state.children.map(c=>btn('child',`${avatar(c.avatar)}<span>${esc(c.name)}</span>`,c.id===childId?'active':'',`data-id="${esc(c.id)}" aria-pressed="${c.id===childId}"`)).join('')}</div></header><main id="main" tabindex="-1">${loaded.warning?`<div class="banner">${esc(loaded.warning)}</div>`:''}${html}</main></div>${navigation('mobile-nav')}</div>`;
 }
 function renderRecovery(){root.innerHTML=`<main class="content"><div class="danger-box"><h1>기록을 먼저 확인해 주세요</h1><p>${esc(loaded.warning)}</p><p>이전 저장본으로 복구하거나, 원본 파일을 내려받아 보관할 수 있어요.</p><div class="button-row">${btn('recover','이전 저장본 복구','primary')}${btn('raw-export','현재 저장 원본 받기')}${btn('import','백업 파일 불러오기')}</div><input id="import-file" type="file" accept=".json,application/json" class="file-input"></div></main>`;}
-function renderToday(){
-  const c=child(),entries=entriesFor(state,c.id,date,date),stars=starSummary(state,c.id),rest=state.restDays[restKey(date)],future=date>today(),tomorrow=addDays(today(),1),otherDay=date!==today()&&date!==tomorrow;
-  return `${heading('오늘 할 일', `<span class="soft-label">${icon(cloudConfig?.enabled?'cloud':'check')}<span id="save-label">${esc(saveLabel())}</span></span>`)}
-  ${planPageSwitch('today',btn)}
-  <div class="planning-toolbar"><div class="tabbar" aria-label="계획할 날짜">${btn('date','오늘',date===today()?'active':'',`data-date="${today()}"`)}${btn('date','내일 미리 정하기',date===tomorrow?'active':'',`data-date="${tomorrow}"`)}${otherDay?btn('date',fmt(date),'active',`data-date="${date}"`):''}</div></div>
-  <p class="planner-intro">${date===tomorrow?'내일 할 일을 미리 정해 두어요. 완료는 내일 표시할 수 있어요.':future?'이날 정한 할 일이에요. 완료는 그날 표시할 수 있어요.':date<today()?'이날 정한 할 일과 실천 기록이에요.':'할 일을 정하고, 해낸 뒤 한 번 눌러요.'}</p>
-  <div class="daily-status"><span>${icon('calendar')}${fmt(date)}</span>${!future?`<span>${icon('check')}${entries.length}개 실천</span>`:''}<span>${icon('star')}모은 별 ${stars.balance}개</span></div>
-  ${date>=today()&&date<=tomorrow?`<div class="today-add">${btn('daily-add',`${icon('plus')}할 일 추가`,'primary',`data-category="${UNGROUPED}"`)}</div>`:''}
-  ${rest?'<div class="banner rest">쉬어 가는 날이에요. 이미 남긴 계획과 기록은 그대로예요.</div>':''}
-  ${dailyScreenGroups(state,childId,date,card=>habitCard(card,rest),btn)}
-  <div class="section-head"><span></span>${!future?btn('rest',`${icon('sun')}${rest?'쉬는 날 취소':'오늘은 쉬는 날'}`,'text-btn'):''}</div>`;
-}
-function habitCard({habit:h,config:v,entry,flexible,count,target,goalReached},rest){
-  const cat=categoryInfo(state,v.category),disabled=!entry&&(rest||goalReached||date>today());
-  const actual=entry?.actual?`<div class="actual-result"><strong>실제로 한 일</strong><span>${esc(actualLabel(entry))}</span>${entry.actual.note?`<small>${esc(entry.actual.note)}</small>`:''}</div>`:'';
-  return `<article class="habit-card ${entry?'done':''}" data-habit-id="${esc(h.id)}" tabindex="-1"><div class="card-top"><span class="activity-icon ${cat.color}">${icon(cat.icon)}</span><span class="reward-tag">${icon('star')}${entry?entry.points:v.points}</span></div><div class="task-copy">${v.material?`<div class="material-name">${esc(v.material)}</div>`:''}<h3>${esc(v.title)}</h3><p>${esc(v.detail)}</p>${actual}</div><div class="card-footer"><span class="frequency">${h.weeklyFallbackFor?'이번 주에 정한 날':frequencyLabel(v)}${flexible?`<br>${count} / ${target}번 실천`:''}</span>${btn(entry?'undo':'done',`${icon(entry||goalReached?'check':'plus')}${entry?'했어요!':date>today()?'그날 해요':goalReached?'약속 달성':rest?'쉬어 가요':'다 했어요'}`,`done-btn ${goalReached&&!entry?'goal':''}`,`data-id="${esc(h.id)}" aria-label="${esc(taskLabel(v))} ${entry?'완료 취소':'완료'}" aria-pressed="${!!entry}" ${disabled?'disabled':''}`)}${entry?btn('actual-edit',entry.actual?'실제 내용 수정':'실제로 한 일 적기','text-btn',`data-id="${esc(h.id)}" data-child="${esc(h.childId)}" data-day="${date}"`):''}${(h.dailyPlan||h.routinePlan)&&date>=today()&&!entry?btn('daily-edit','함께 바꾸기','text-btn',`data-id="${esc(h.id)}" aria-label="${esc(taskLabel(v))} 계획 바꾸기"`)+btn('daily-remove','삭제','text-btn',`data-id="${esc(h.id)}" aria-label="${esc(taskLabel(v))} 계획 삭제"`):''}</div></article>`;
-}
-function timeline(entries,showDate=true){return entries.map(e=>`<div class="timeline-item"><span class="activity-icon ${categoryInfo(state,e.snapshot.category)?.color||'mint'}">${icon(categoryInfo(state,e.snapshot.category)?.icon||'leaf')}</span><div class="grow"><strong>${esc(actualLabel(e))}</strong><p>${showDate?`${Number(e.date.slice(5,7))}월 ${Number(e.date.slice(8))}일 · `:''}${e.actual?`계획: ${esc(taskLabel(e.snapshot))}${e.actual.note?` · ${esc(e.actual.note)}`:''}`:esc(e.snapshot.detail)}</p></div><span class="reward-tag">${icon('star')}${e.points}</span>${btn('actual-edit',e.actual?'수정':'실제 기록','text-btn',`data-id="${esc(e.habitId)}" data-child="${esc(e.childId)}" data-day="${e.date}" aria-label="${esc(actualLabel(e))} 실제 내용 ${e.actual?'수정':'기록'}"`)}</div>`).join('');}
+function timeline(entries,showDate=true){return entries.map(e=>`<div class="timeline-item"><span class="activity-icon ${categoryInfo(state,e.snapshot.category)?.color||'mint'}">${icon(categoryInfo(state,e.snapshot.category)?.icon||'leaf')}</span><div class="grow"><button class="record-open" data-action="task-edit" data-id="${esc(e.habitId)}" data-child="${esc(e.childId)}" data-day="${e.date}"><strong>${esc(actualLabel(e))}</strong></button><p>${showDate?`${Number(e.date.slice(5,7))}월 ${Number(e.date.slice(8))}일 · `:''}${e.actual?`계획: ${esc(taskLabel(e.snapshot))}${e.actual.note?` · ${esc(e.actual.note)}`:''}`:esc(e.snapshot.detail)}</p></div><span class="reward-tag">${icon('star')}${e.points}</span>${btn('actual-edit',e.actual?'수정':'실제 기록','text-btn',`data-id="${esc(e.habitId)}" data-child="${esc(e.childId)}" data-day="${e.date}" aria-label="${esc(actualLabel(e))} 실제 내용 ${e.actual?'수정':'기록'}"`)}</div>`).join('');}
 function renderRecords(){
   let body='';
   if(recordTab==='week'){
@@ -62,36 +39,45 @@ function renderRecords(){
     const max=Math.max(4,...week.map(d=>records.filter(e=>e.date===d).length));
     body=`<section class="panel"><div class="section-head" style="margin-top:0"><h2>${Number(start.slice(5,7))}월 ${Number(start.slice(8))}일 – ${Number(week[6].slice(5,7))}월 ${Number(week[6].slice(8))}일</h2><div class="date-controls">${btn('week-prev',icon('left'),'icon-btn','aria-label="지난주"')}${btn('week-next',icon('right'),'icon-btn',`aria-label="다음 주" ${start>=weekStart(today())?'disabled':''}`)}</div></div><p>${activeDays?`이번 주 ${activeDays}일 동안 ${records.length}번의 작은 실천을 남겼어요.`:'이번 주의 첫 발자국을 기다리고 있어요.'}</p><div class="record-bars">${week.map(d=>{const n=records.filter(e=>e.date===d).length;return `<div class="bar-column"><div class="bar-value">${n||'·'}</div><div class="bar-area"><div class="bar" style="height:${Math.max(4,n/max*100)}%"></div></div><div class="bar-label">${weekdays[dateObj(d).getDay()]}</div></div>`;}).join('')}</div></section><section class="panel"><details class="settings-section"><summary>한마디 남기기 (선택)</summary><p>아이와 함께 한마디를 남겨 보세요.</p><form data-form="note"><label class="field"><span class="sr-only">이번 주 한마디</span><textarea name="note" maxlength="1000" placeholder="어떤 활동이 즐거웠나요? 다음 주에는 무엇을 해볼까요?">${esc(state.notes[`${childId}/${start}`]||'')}</textarea></label><button class="secondary" type="submit">한마디 저장</button></form></details></section><section class="panel"><h2>차곡차곡 남긴 기록</h2>${recordGroups(records,`week/${childId}/${start}`,timeline,state)}</section>`;
   }else if(recordTab==='month'){
-    const days=monthDays(recordMonth),records=entriesFor(state,childId,days[0],days.at(-1)),selected=records.filter(e=>e.date===selectedCalendarDay),missed=missedPlansFor(state,childId,selectedCalendarDay),offset=(dateObj(days[0]).getDay()+6)%7;
-    body=`<section class="panel"><div class="section-head" style="margin-top:0"><h2>${recordMonth.slice(0,4)}년 ${Number(recordMonth.slice(5))}월</h2><div class="date-controls">${btn('month-prev',icon('left'),'icon-btn','aria-label="지난달"')}${btn('month-next',icon('right'),'icon-btn',`aria-label="다음 달" ${recordMonth>=today().slice(0,7)?'disabled':''}`)}</div></div><p>${new Set(records.map(e=>e.date)).size}일의 실천 · ${records.length}개의 발자국 · 별 ${records.reduce((n,e)=>n+e.points,0)}개를 모았어요</p><div class="calendar">${['월','화','수','목','금','토','일'].map(w=>`<div class="calendar-label">${w}</div>`).join('')}${'<span></span>'.repeat(offset)}${days.map(d=>{const n=records.filter(e=>e.date===d).length,rest=state.restDays[restKey(d)];return btn('calendar-date',`<span>${Number(d.slice(8))}</span><small>${n?`${n}개 실천`:rest?'쉬는 날':d<today()&&missedPlansFor(state,childId,d).length?'미실행':'·'}</small>`,`calendar-day ${n?'has-record':''} ${d===selectedCalendarDay?'active':''} ${d===today()?'is-today':''} ${d>today()?'future':''}`,`data-date="${d}" aria-label="${fmt(d)}, ${n}개 실천${rest?', 쉬는 날':''}" ${d>today()?'disabled':''}`);}).join('')}</div><div class="calendar-detail"><h3>${fmt(selectedCalendarDay)}</h3>${selected.length?timeline(selected,false):empty('이날 남긴 실천 기록이 없어요.')}${missed.length?`<div class="missed-plans"><h4>계획했지만 실천 표시가 없는 일</h4>${missed.map(({config})=>`<p>${esc(taskLabel(config))} · 미실행</p>`).join('')}</div>`:''}<div class="no-print">${btn('edit-date','이날의 약속 보기','text-btn',`data-date="${selectedCalendarDay}"`)}</div></div></section><section class="panel monthly-record-list"><h2>이 달에 읽은 책과 한 일</h2><p>제목을 누르면 날짜와 분량을 볼 수 있어요. 읽기 기록은 책을 끝까지 읽었다는 뜻과는 달라요.</p>${recordGroups(records,`month/${childId}/${recordMonth}`,timeline,state)}</section><div class="button-row no-print">${btn('print',`${icon('download')}월간 기록 인쇄 / PDF`)}</div>`;
+    const days=monthDays(recordMonth),records=entriesFor(state,childId,days[0],days.at(-1)),selected=records.filter(e=>e.date===selectedCalendarDay),missed=taskRows(state,childId,selectedCalendarDay).filter(r=>!r.entry&&selectedCalendarDay<today()&&!state.restDays[restKey(selectedCalendarDay)]),offset=(dateObj(days[0]).getDay()+6)%7;
+    body=`<section class="panel"><div class="section-head" style="margin-top:0"><h2>${recordMonth.slice(0,4)}년 ${Number(recordMonth.slice(5))}월</h2><div class="date-controls">${btn('month-prev',icon('left'),'icon-btn','aria-label="지난달"')}${btn('month-next',icon('right'),'icon-btn',`aria-label="다음 달" ${recordMonth>=today().slice(0,7)?'disabled':''}`)}</div></div><p>${new Set(records.map(e=>e.date)).size}일의 실천 · ${records.length}개의 발자국 · 별 ${records.reduce((n,e)=>n+e.points,0)}개를 모았어요</p><div class="calendar">${['월','화','수','목','금','토','일'].map(w=>`<div class="calendar-label">${w}</div>`).join('')}${'<span></span>'.repeat(offset)}${days.map(d=>{const n=records.filter(e=>e.date===d).length,rest=state.restDays[restKey(d)];return btn('calendar-date',`<span>${Number(d.slice(8))}</span><small>${n?`${n}개 실천`:rest?'쉬는 날':d<today()&&taskRows(state,childId,d).filter(r=>!r.entry).length?'미실행':'·'}</small>`,`calendar-day ${n?'has-record':''} ${d===selectedCalendarDay?'active':''} ${d===today()?'is-today':''} ${d>today()?'future':''}`,`data-date="${d}" aria-label="${fmt(d)}, ${n}개 실천${rest?', 쉬는 날':''}" ${d>today()?'disabled':''}`);}).join('')}</div><div class="calendar-detail"><h3>${fmt(selectedCalendarDay)}</h3>${selected.length?timeline(selected,false):empty('이날 남긴 실천 기록이 없어요.')}${missed.length?`<div class="missed-plans"><h4>계획했지만 실천 표시가 없는 일</h4>${missed.map(({config})=>`<p>${esc(taskLabel(config))} · 미실행</p>`).join('')}</div>`:''}<div class="no-print">${btn('edit-date','이날의 약속 보기','text-btn',`data-date="${selectedCalendarDay}"`)}</div></div></section><section class="panel monthly-record-list"><h2>이 달에 읽은 책과 한 일</h2><p>제목을 누르면 날짜와 분량을 볼 수 있어요. 읽기 기록은 책을 끝까지 읽었다는 뜻과는 달라요.</p>${recordGroups(records,`month/${childId}/${recordMonth}`,timeline,state)}</section><div class="button-row no-print">${btn('print',`${icon('download')}월간 기록 인쇄 / PDF`)}</div>`;
   }else{
-    const all=entriesFor(state,childId),habits=historyHabits(state,childId);
-    body=groupByCategory(habits,h=>habitAt(h,today())||h.versions.at(-1),state).map(group=>fold(`activity/${childId}/${group.id}`,`${icon(group.icon)}${esc(group.label)}`,`${group.items.length}개 할 일`,group.items.map(h=>{const rows=all.filter(e=>e.habitId===h.id),v=habitAt(h,today())||h.versions.at(-1);return fold(`activity/${childId}/${h.id}`,`${esc(taskLabel(v))}${h.archivedFrom?' <small>지난 활동</small>':''}`,`${rows.length}번 실천`,rows.length?timeline(rows.sort((a,b)=>b.date.localeCompare(a.date))):empty('첫 발자국을 기다려요.'),false,'material-group');}).join(''))).join('');
+    const all=entriesFor(state,childId);
+    body=recordGroups(all,`activity/${childId}`,timeline,state);
     if(!body)body=empty('아직 실천 기록이 없어요.');
   }
-  return `${heading(`${esc(child().name)}의 발자국`)}<p class="date-label">작은 실천이 모여 나만의 이야기가 되어요.</p><div class="tabbar" aria-label="기록 보기">${[['week','이번 주'],['month','월간 기록'],['activity','활동별']].map(([id,name])=>btn('record-tab',name,recordTab===id?'active':'',`data-tab="${id}" aria-pressed="${recordTab===id}"`)).join('')}</div><div class="print-only">습관 형성 시스템 · ${esc(child().name)}</div>${body}`;
+  return `${heading(`${esc(child().name)}의 발자국`,btn('task-new','실천 적기','secondary',`data-day="${today()}"`))}<p class="date-label">작은 실천이 모여 나만의 이야기가 되어요.</p><div class="tabbar" aria-label="기록 보기">${[['week','이번 주'],['month','월간 기록'],['activity','활동별']].map(([id,name])=>btn('record-tab',name,recordTab===id?'active':'',`data-tab="${id}" aria-pressed="${recordTab===id}"`)).join('')}</div><div class="print-only">습관 형성 시스템 · ${esc(child().name)}</div>${body}`;
 }
 function renderRewards(){
   const s=starSummary(state,childId),history=state.redemptions.filter(r=>r.childId===childId).slice().reverse();
   return `${heading('별을 모아, 함께 즐겨요')}<div class="balance">${icon('star')}<div><strong>${s.balance}<small>개의 별</small></strong><p>지금까지 ${s.earned}개를 모았어요. 우리 가족의 약속대로 사용해요.</p></div></div>${s.balance<0?'<div class="banner">실천 기록을 고쳐 사용한 별이 더 많아졌어요. 설정에서 선물 교환 내역을 확인해 주세요.</div>':''}<div class="reward-grid">${state.rewards.length?state.rewards.map(r=>`<article class="reward-card"><div class="reward-illustration">${icon(r.icon||'gift')}</div><h3>${esc(r.title)}</h3><p>별 ${r.cost}개와 바꿔요</p>${btn('redeem',s.balance>=r.cost?'이 선물로 고를래요':`별 ${r.cost-s.balance}개 더 모아요`,'secondary',`data-id="${esc(r.id)}" ${s.balance<r.cost?'disabled':''}`)}</article>`).join(''):'<div class="panel">아직 함께 정한 선물이 없어요. 설정에서 새 약속을 만들 수 있어요.</div>'}</div><p class="support-note">${icon('gift')}선물은 부모님과 함께 고르고 약속해요.</p>${history.length?`<section class="panel" style="margin-top:24px"><h2>함께 즐긴 선물</h2>${history.map(r=>`<div class="timeline-item"><span class="activity-icon yellow">${icon('gift')}</span><div class="grow"><strong>${esc(r.title)}</strong><p>${fmt(today(new Date(r.at)))} · ${r.cancelledAt?'교환 취소됨':`별 ${r.cost}개 사용`}</p></div></div>`).join('')}</section>`:''}`;
 }
-function renderTasks(){return `${heading('할 일 관리')}<p class="planner-intro">계획한 일을 한눈에 보고, 수정과 정리는 부모님과 함께해요.</p>${taskManagerScreen(state,managerView,managerFilter,btn,today(),managerScope)}`;}
 function renderParent(){
-  return `${heading('설정')}<section class="panel"><h2>함께하는 아이들</h2>${state.children.map(c=>`<div class="settings-item">${avatar(c.avatar)}<div class="grow"><strong>${esc(c.name)}</strong><p>${c.style==='together'?'부모와 함께 기록해요':'스스로 확인하고 기록해요'}</p></div>${btn('edit-child','바꾸기','text-btn',`data-id="${esc(c.id)}"`)}</div>`).join('')}</section>${renderCategorySettings()}<section class="panel"><div class="section-head" style="margin-top:0"><h2>우리 가족의 선물</h2>${btn('add-reward',`${icon('plus')}추가`,'text-btn')}</div>${!state.rewards.length?'<p>아직 정한 선물이 없어요. 추가 버튼으로 가족의 약속을 만들 수 있어요.</p>':''}${state.rewards.map(r=>`<div class="settings-item"><span class="activity-icon yellow">${icon(r.icon||'gift')}</span><div class="grow"><strong>${esc(r.title)}</strong><p>별 ${r.cost}개</p></div>${btn('edit-reward','수정','text-btn',`data-id="${esc(r.id)}"`)}${btn('remove-reward','삭제','text-btn danger',`data-id="${esc(r.id)}" aria-label="${esc(r.title)} 선물 삭제"`)}</div>`).join('')}${state.redemptions.some(r=>!r.cancelledAt)?`<details class="settings-section" style="margin-top:20px"><summary>선물 교환 내역 관리</summary>${state.redemptions.filter(r=>!r.cancelledAt).slice().reverse().map(r=>`<div class="settings-item"><div class="grow"><strong>${esc(state.children.find(c=>c.id===r.childId)?.name)} · ${esc(r.title)}</strong><p>별 ${r.cost}개 · ${fmt(today(new Date(r.at)))}</p></div>${btn('cancel-reward','교환 취소','text-btn',`data-id="${esc(r.id)}"`)}</div>`).join('')}</details>`:''}</section>
+  return `${heading('설정')}<section class="panel"><h2>함께하는 아이들</h2>${state.children.map(c=>`<div class="settings-item">${avatar(c.avatar)}<div class="grow"><strong>${esc(c.name)}</strong><p>${c.style==='together'?'부모와 함께 기록해요':'스스로 확인하고 기록해요'}</p></div>${btn('edit-child','바꾸기','text-btn',`data-id="${esc(c.id)}"`)}</div>`).join('')}</section>${renderThemeSettings()}<details class="panel settings-section"><summary>이전 활동 분류 연결</summary>${renderCategorySettings()}</details><section class="panel"><div class="section-head" style="margin-top:0"><h2>우리 가족의 선물</h2>${btn('add-reward',`${icon('plus')}추가`,'text-btn')}</div>${!state.rewards.length?'<p>아직 정한 선물이 없어요. 추가 버튼으로 가족의 약속을 만들 수 있어요.</p>':''}${state.rewards.map(r=>`<div class="settings-item"><span class="activity-icon yellow">${icon(r.icon||'gift')}</span><div class="grow"><strong>${esc(r.title)}</strong><p>별 ${r.cost}개</p></div>${btn('edit-reward','수정','text-btn',`data-id="${esc(r.id)}"`)}${btn('remove-reward','삭제','text-btn danger',`data-id="${esc(r.id)}" aria-label="${esc(r.title)} 선물 삭제"`)}</div>`).join('')}${state.redemptions.some(r=>!r.cancelledAt)?`<details class="settings-section" style="margin-top:20px"><summary>선물 교환 내역 관리</summary>${state.redemptions.filter(r=>!r.cancelledAt).slice().reverse().map(r=>`<div class="settings-item"><div class="grow"><strong>${esc(state.children.find(c=>c.id===r.childId)?.name)} · ${esc(r.title)}</strong><p>별 ${r.cost}개 · ${fmt(today(new Date(r.at)))}</p></div>${btn('cancel-reward','교환 취소','text-btn',`data-id="${esc(r.id)}"`)}</div>`).join('')}</details>`:''}</section>
   <section class="panel"><h2>가족 기록 연결</h2><p>아이패드와 부모님의 기기에서 같은 기록을 볼 수 있어요. 연결 전에도 이 기기에는 자동 저장돼요.</p><div class="cloud-status" id="cloud-status">${esc(saveLabel())}</div><div class="button-row">${btn('connect',`${icon('cloud')}${cloudConfig?.enabled?'연결 설정':'가족 연결 코드 입력'}`)}${cloudConfig?.enabled?btn('sync','지금 동기화')+btn('share-connection','다른 기기 연결'):''}</div>${cloudConfig?.enabled&&cloudConfig.dirty?'<p>아직 다른 기기에 전달하지 못한 기록이 있어요. 연결을 확인한 뒤 동기화해 주세요.</p>':''}</section>
   <section class="panel"><h2>기록 보관하기</h2><p>백업 파일에는 두 아이의 설정과 기록이 함께 담겨요. 표 파일은 스프레드시트에서 열 수 있어요.</p><div class="button-row">${btn('export',`${icon('download')}전체 기록 백업`)}${btn('csv',`${icon('download')}실천 기록 표`)}${btn('import',`${icon('upload')}백업 불러오기`)}</div><input id="import-file" type="file" accept=".json,application/json" class="file-input"><details class="settings-section" style="margin-top:20px"><summary>아이패드 홈 화면에 추가하기</summary><p>Safari에서 앱 주소를 열고 공유 버튼 → ‘홈 화면에 추가’를 선택하세요. 처음 열 때 인터넷에 연결하면 이후에는 연결이 끊겨도 기록할 수 있어요. 가족 기록 연결은 인터넷이 돌아오면 이어집니다.</p><p>기록은 브라우저마다 따로 저장돼요. 다른 브라우저나 홈 화면 앱으로 옮길 때는 가족 연결 코드 또는 백업 파일을 사용해 주세요.</p></details></section><p class="version-note">습관 형성 시스템 · Habit Builder 0.3<br>아이의 속도에 맞춰, 우리 가족이 함께 만들어요.</p>`;
 }
+
+function renderThemeSettings(){
+ const items=themes(state);
+ return '<section class="panel"><div class="section-head"><h2>성장 주제</h2>'+btn('theme-add','주제 추가','secondary')+'</div><p>작은 행동이 기르는 힘을 함께 정해요. 두 아이가 같은 주제를 사용해요.</p>'+items.map((t,i)=>'<div class="settings-item"><span class="activity-icon '+t.color+'">'+icon(t.icon)+'</span><div class="grow"><strong>'+esc(t.childLabel)+'</strong><p>'+esc(t.label)+'</p></div><div class="category-actions">'+btn('theme-move','↑','order-btn','data-id="'+t.id+'" data-direction="-1" aria-label="'+esc(t.label)+' 위로" '+(i===0?'disabled':''))+btn('theme-move','↓','order-btn','data-id="'+t.id+'" data-direction="1" aria-label="'+esc(t.label)+' 아래로" '+(i===items.length-1?'disabled':''))+btn('theme-edit','수정','text-btn','data-id="'+t.id+'"')+btn('theme-delete','삭제','text-btn','data-id="'+t.id+'" '+(items.length===1?'disabled':''))+'</div></div>').join('')+'</section>';
+}
+function themeEditor(id){
+ const t=themes(state).find(t=>t.id===id)||{label:'',childLabel:''};
+ modal(id?'성장 주제 바꾸기':'새 성장 주제','<form data-form="theme" data-id="'+esc(id||'')+'"><label class="field">주제 이름<input name="label" value="'+esc(t.label)+'" maxlength="30" required placeholder="예: 생활 습관"></label><label class="field">아이에게 보여 줄 이름<input name="childLabel" value="'+esc(t.childLabel)+'" maxlength="40" placeholder="예: 내 생활 스스로 하기"></label><p class="form-error" role="alert"></p><div class="dialog-actions">'+btn('close','돌아가기')+'<button class="primary" type="submit">주제 저장</button></div></form>');
+}
+
 function renderCategorySettings(){
   const categories=activeCategories(state);
-  return `<section class="panel category-settings"><div class="section-head" style="margin-top:0"><h2>상위 묶음 관리</h2>${btn('add-category',`${icon('plus')}묶음 추가`,'secondary')}</div><p>두 아이가 함께 사용하는 묶음이에요. 위·아래로 순서를 바꾸면 아이들의 할 일 화면에도 적용돼요.</p>${categories.map((c,index)=>{
+  return `<section class="panel category-settings"><div class="section-head" style="margin-top:0"><h2>활동과 성장 주제</h2>${btn('add-category',`${icon('plus')}묶음 추가`,'secondary')}</div><p>이전에 만든 활동 묶음을 보관해요. 각 활동이 어떤 힘을 기르는지 함께 정할 수 있어요.</p>${categories.map((c,index)=>{
     const habits=categoryHabits(state,c.id),counts=state.children.map(child=>`${child.name} ${habits.filter(h=>h.childId===child.id).length}개`).join(' · ');
-    return `<div class="settings-item category-setting" data-category-id="${esc(c.id)}"><span class="activity-icon ${c.color}">${icon(c.icon)}</span><div class="grow"><strong>${esc(c.label)}</strong><p>${esc(counts)}</p></div><div class="category-actions"><div class="category-order" aria-label="${esc(c.label)} 순서">${btn('move-category','↑ 위','order-btn',`data-id="${esc(c.id)}" data-direction="-1" aria-label="${esc(c.label)} 위로 이동" ${index===0?'disabled':''}`)}${btn('move-category','↓ 아래','order-btn',`data-id="${esc(c.id)}" data-direction="1" aria-label="${esc(c.label)} 아래로 이동" ${index===categories.length-1?'disabled':''}`)}</div>${btn('edit-category','이름·설정','text-btn',`data-id="${esc(c.id)}" aria-label="${esc(c.label)} 이름과 설정 바꾸기"`)}${btn('delete-category','삭제','text-btn',`data-id="${esc(c.id)}" aria-label="${esc(c.label)} 묶음 삭제"`)}</div></div>`;
+    return `<div class="settings-item category-setting" data-category-id="${esc(c.id)}"><span class="activity-icon ${c.color}">${icon(c.icon)}</span><div class="grow"><strong>${esc(c.label)}</strong><p>${esc(themeFor(state,{category:c.id}).label)} · ${esc(counts)}</p></div><div class="category-actions"><div class="category-order" aria-label="${esc(c.label)} 순서">${btn('move-category','↑ 위','order-btn',`data-id="${esc(c.id)}" data-direction="-1" aria-label="${esc(c.label)} 위로 이동" ${index===0?'disabled':''}`)}${btn('move-category','↓ 아래','order-btn',`data-id="${esc(c.id)}" data-direction="1" aria-label="${esc(c.label)} 아래로 이동" ${index===categories.length-1?'disabled':''}`)}</div>${btn('edit-category','이름·설정','text-btn',`data-id="${esc(c.id)}" aria-label="${esc(c.label)} 이름과 설정 바꾸기"`)}${btn('delete-category','삭제','text-btn',`data-id="${esc(c.id)}" aria-label="${esc(c.label)} 묶음 삭제"`)}</div></div>`;
   }).join('')}<p>묶음 이름을 바꾸면 기록 화면의 이름도 함께 바뀌어요. 삭제한 묶음의 완료 기록은 지난 이름으로 남아요.</p></section>`;
 }
 function categoryEditor(id){
   const c=id?categoryInfo(state,id):{label:'',type:'life'};
-  const types=[['reading','책 모양 · 책 제목 필수'],['math','연필 모양 · 교재 이름 필수'],['learning','연필 모양 · 이름은 선택'],['life','해 모양 · 이름은 선택'],['movement','운동 모양 · 이름은 선택'],['art','음표 모양 · 이름은 선택']];
-  modal(id?'상위 묶음 바꾸기':'새 상위 묶음',`<form data-form="category" data-id="${esc(id||'')}"><label class="field">묶음 이름<input name="label" value="${esc(c.label)}" placeholder="예: 영어, 피아노, 스스로 하는 일" maxlength="30" required></label><label class="field">모양과 할 일 입력 방식<select name="type">${types.map(([value,label])=>`<option value="${value}" ${c.type===value?'selected':''}>${label}</option>`).join('')}</select><small>책·교재 제목을 따로 모으고 싶을 때는 제목이 필수인 방식을 고르세요.</small></label><p>두 아이의 할 일 메뉴에 함께 표시돼요.</p>${id?parentCheck():''}<p class="form-error" role="alert"></p><div class="dialog-actions">${btn('close','돌아가기')}<button type="submit" class="primary">묶음 저장</button></div></form>`);
+  const types=[['reading','책 모양'],['math','연필 모양'],['learning','연필 모양'],['life','해 모양'],['movement','운동 모양'],['art','음표 모양']];
+  modal(id?'상위 묶음 바꾸기':'새 상위 묶음',`<form data-form="category" data-id="${esc(id||'')}"><label class="field">묶음 이름<input name="label" value="${esc(c.label)}" placeholder="예: 영어, 피아노, 스스로 하는 일" maxlength="30" required></label><label class="field">활동 모양<select name="type">${types.map(([value,label])=>`<option value="${value}" ${c.type===value?'selected':''}>${label}</option>`).join('')}</select></label><label class="field">성장 주제<select name="themeId">${themes(state).map(t=>`<option value="${t.id}" ${themeFor(state,{category:id}).id===t.id?'selected':''}>${esc(t.childLabel)} · ${esc(t.label)}</option>`).join('')}</select></label><p>두 아이가 함께 사용하는 활동 설정이에요.</p>${id?parentCheck():''}<p class="form-error" role="alert"></p><div class="dialog-actions">${btn('close','돌아가기')}<button type="submit" class="primary">묶음 저장</button></div></form>`);
 }
 function categoryDeleteDialog(id){
   const c=categoryInfo(state,id),others=activeCategories(state).filter(c=>c.id!==id),habits=categoryHabits(state,id);
@@ -100,130 +86,33 @@ function categoryDeleteDialog(id){
   modal('상위 묶음을 삭제할까요?',`<form data-form="delete-category" data-id="${esc(id)}"><p>두 아이의 할 일 메뉴에서 ‘${esc(c.label)}’ 묶음을 지워요.</p>${habits.length?`<p>남아 있는 할 일 ${habits.length}개를 아래 묶음으로 옮겨요.<br>${esc(counts)}</p><label class="field">할 일을 옮길 묶음<select name="destination" required><option value="">묶음을 골라 주세요</option>${others.map(c=>`<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('')}</select></label>`:'<p>이 묶음에는 옮길 할 일이 없어요.</p>'}<p>완료한 기록과 별은 그대로 보관해요. 지난 기록에는 ‘${esc(c.label)}’ 이름이 남아요. 이 묶음의 주간 일정은 그만해요.</p>${parentCheck()}<p class="form-error" role="alert"></p><div class="dialog-actions">${btn('close','돌아가기')}<button type="submit" class="primary">${habits.length?'할 일 옮기고 묶음 삭제':'묶음 삭제'}</button></div></form>`);
 }
 function requireParent(scope=dialog){if(!scope.querySelector('[name="parentConfirmed"]')?.checked)throw new Error('부모님과 함께 확인한 뒤 표시해 주세요.');}
-function weeklyEditor(category,targetChild=childId,targetStart=weekStart(today())){
-  const next=targetStart===addDays(weekStart(today()),7),effectiveDate=next?targetStart:today();
-  const c=categoryInfo(state,category),plan=(state.weeklyPlans||[]).find(p=>p.childId===targetChild&&p.category===category),current=weeklyAt(plan,effectiveDate),v=current||{mode:'daily',days:[],anchorDate:effectiveDate};
-  const choice=v.mode==='days'?(JSON.stringify([...v.days].sort())==='[1,3,5]'?'mwf':JSON.stringify([...v.days].sort())==='[1,2,3,4,5]'?'weekdays':'custom'):v.mode==='off'?'daily':v.mode;
-  const options=[['daily','매일'],['alternate','하루 걸러 격일'],['mwf','월 · 수 · 금'],['weekdays','월요일부터 금요일'],['custom','요일 직접 고르기'],...(plan?[['off','이 묶음 일정 그만하기']]:[])];
-  modal(`${esc(c.label)} · ${next?'다음 주':'이번 주'} 할 날 정하기`,`<form data-form="weekly-plan" data-child="${esc(targetChild)}" data-category="${esc(category)}" data-effective-date="${effectiveDate}"><label class="field">언제 할까요?<select name="weeklyMode">${options.map(([id,label])=>`<option value="${id}" ${id===choice?'selected':''}>${label}</option>`).join('')}</select></label><div id="weekly-extra"></div><p>일기처럼 묶음 이름 자체가 할 일이면, 요일만 정하고 그날 바로 완료해요. 책 이름이나 분량이 필요한 일은 오늘·내일 화면에서 세부 할 일을 정해요. ${next?'다음 주 월요일부터 적용되고 그다음 주에도 이어져요.':'일정은 다음 주에도 이어져요.'}</p>${plan?`<p>${current&&current.mode!=='off'?`바꾸기 전: ${esc(weeklyLabel(current))}`:current?.mode==='off'?'이전에 정한 일정은 종료됐어요. 다시 시작하려면 부모님과 함께 확인해요.':'이 주에는 정한 일정이 없어요. 저장할 때 부모님과 함께 확인해요.'}<br>이미 적은 세부 계획과 완료 기록은 그대로 남아요.</p>${parentCheck()}`:''}<p class="form-error" role="alert"></p><div class="dialog-actions">${btn('close','돌아가기')}<button type="submit" class="primary">${plan?'함께 확인하고 저장':'일정 저장'}</button></div></form>`);
-  renderWeeklyExtra(choice,v);
+
+function openTask(id,targetChild=childId,day=date,series=false){
+  modal(id?'할 일과 기록':'할 일 정하기',editorBody(state,targetChild,id,day,btn,series));
+  updateTaskFields();
 }
-function renderWeeklyExtra(choice,v={days:[1,3,5]}){
-  const box=dialog.querySelector('#weekly-extra');if(!box)return;
-  box.innerHTML=choice==='alternate'?`<label class="field">어느 날부터 시작할까요?<input type="date" name="anchorDate" value="${esc(v.anchorDate||dialog.querySelector('[data-form="weekly-plan"]')?.dataset.effectiveDate||today())}" required><small>이 날짜부터 하루 걸러 이어져요. 주가 바뀌어도 순서가 유지돼요.</small></label>`:choice==='custom'?`<div class="field"><span>할 요일</span><div class="days-choice">${[1,2,3,4,5,6,0].map(d=>`<label><input type="checkbox" name="weeklyDays" value="${d}" ${v.days.includes(d)?'checked':''}><span>${weekdays[d]}</span></label>`).join('')}</div></div>`:choice==='off'?'<p>앞으로 이 묶음의 기본 실천이 나타나지 않아요. 이미 정한 세부 할 일과 완료 기록은 남아요.</p>':'';
+function updateTaskFields(){
+ const f=dialog.querySelector('[data-form="task"]');if(!f||!f.elements.frequency)return;
+ const frequency=f.elements.frequency.value,scope=f.elements.scope.value;
+ const recurring=f.elements.scope.type!=='hidden';
+ f.querySelector('.task-schedule').hidden=recurring&&scope==='day';
+ f.querySelector('.task-days').hidden=frequency!=='weekdays';
+ const target=f.querySelector('.task-target');target.hidden=!['weekly','monthly'].includes(frequency);f.elements.target.disabled=target.hidden;f.elements.target.max=frequency==='weekly'?7:31;
+ f.querySelector('.task-end').hidden=frequency==='once';
+ f.querySelector('.task-end-date').hidden=f.elements.until.value!=='date';f.elements.endDate.required=frequency!=='once'&&f.elements.until.value==='date'&&(!recurring||scope==='future');
+ if(recurring)f.elements.date.readOnly=scope==='future'||f.dataset.day<today();
 }
-function dailyEditor(id,category,targetChild=childId,targetDay=date){
-  const h=id?state.habits.find(h=>h.id===id&&h.childId===targetChild):null;
-  if(id&&!h)throw new Error('계획을 찾을 수 없어요.');
-  const day=h?h.versions.at(-1).dueDate:targetDay>=today()&&targetDay<=addDays(today(),1)?targetDay:today();
-  const v=h?(habitAt(h,day)||h.versions.at(-1)):{title:'',material:'',category:activeCategories(state).some(c=>c.id===category)?category:UNGROUPED};
-  modal(`${day===today()?'오늘':day===addDays(today(),1)?'내일':fmt(day)} 할 일 ${id?'바꾸기':'정하기'}`,`<form data-form="daily-plan" data-id="${esc(id||'')}" data-child="${esc(targetChild)}" data-day="${day}"><label class="field">묶음<select name="category"><option value="${UNGROUPED}" ${v.category===UNGROUPED?'selected':''}>묶음 없이 (별도 묶음이 필요 없는 일)</option>${activeCategories(state).map(c=>`<option value="${esc(c.id)}" ${c.id===v.category?'selected':''}>${esc(c.label)}</option>`).join('')}<option value="__new__">+ 새 묶음 만들기</option></select></label><div id="new-category-fields" hidden><label class="field">새 묶음 이름<input name="newCategoryLabel" maxlength="30" placeholder="예: 영어"></label><label class="field">묶음 모양과 입력 방식<select name="newCategoryType"><option value="life">생활·기타</option><option value="reading">책 읽기</option><option value="math">수학·교재</option><option value="learning">학습</option><option value="movement">운동</option><option value="art">표현 활동</option></select></label></div>${id?'':'<div id="recent-plan-box"></div>'}<div id="daily-material-field"><label class="field"><span id="material-label">책·교재 이름</span><input name="material" list="recent-materials" maxlength="100" value="${esc(v.material||'')}"><small id="material-hint"></small></label><datalist id="recent-materials"></datalist><div id="recent-material-buttons" class="recent-materials"></div></div><label class="field">무엇을 얼마나 할까요?<input name="title" value="${esc(v.title)}" maxlength="60" required placeholder="예: 일기 쓰기 / 3장까지 읽기 / A1권 2쪽 풀기"></label>${id?`<p>바꾸기 전: ${esc(taskLabel(v))}</p>${parentCheck()}`:'<div id="repeat-plan-switch"></div><div id="copy-week-box"></div>'}<p class="form-error" role="alert"></p><div class="dialog-actions">${id?btn('daily-remove','이 계획 삭제','text-btn',`data-id="${esc(id)}"`):''}${btn('close','돌아가기')}<button type="submit" class="primary">${id?'함께 확인하고 저장':'계획 저장'}</button></div></form>`);
-  renderMaterial(v.category);renderDailyFields(v.category,targetChild);if(!id){renderRecentPlans(v.category,targetChild);renderWeekCopy(v.category,targetChild,day);renderRepeatSwitch(day);}
+function removeDialog(id,targetChild,day){
+ const v=taskConfig(state,targetChild,id,day),recurring=v?.frequency!=='once';
+ modal('할 일 정리하기',`<form data-form="task-remove" data-id="${esc(id)}" data-child="${esc(targetChild)}" data-day="${day}"><p>${esc(taskLabel(v))}</p><label class="field">어떻게 정리할까요?<select name="scope"><option value="day">이날의 할 일과 기록 삭제</option>${recurring&&day>=today()?'<option value="future">이날부터 그만하기 · 지난 기록 유지</option>':''}<option value="all">잘못 만든 활동 전체 삭제 · 기록도 함께</option></select></label><p>삭제한 일과 기록은 목록과 별에서 빠지고 휴지통에서 되돌릴 수 있어요.</p>${parentCheck()}<p class="form-error" role="alert"></p><div class="dialog-actions">${btn('close','돌아가기')}<button class="primary" type="submit">함께 확인하고 정리</button></div></form>`);
 }
-function actualEditor(id,targetChild=childId,targetDay=date){
-  const entry=state.entries[`${targetChild}/${id}/${targetDay}`];
-  if(!entry)throw new Error('완료 기록을 찾을 수 없어요.');
-  const actual=entry.actual||entry.snapshot;
-  modal('실제로 한 일 기록',`<form data-form="actual" data-id="${esc(id)}" data-child="${esc(targetChild)}" data-day="${targetDay}"><p class="actual-plan">계획: <strong>${esc(taskLabel(entry.snapshot))}</strong></p><p>계획보다 더 했거나 다른 분량을 했다면 실제 내용을 적어 주세요. 계획은 그대로 남고 별은 추가되지 않아요.</p><label class="field">실제로 한 책·교재 (해당할 때)<input name="material" value="${esc(actual.material||'')}" maxlength="100"></label><label class="field">실제로 한 일·분량<input name="title" value="${esc(actual.title)}" maxlength="60" required placeholder="예: 레슨 2개 풀기"></label><label class="field">짧은 메모 (선택)<input name="note" value="${esc(entry.actual?.note||'')}" maxlength="160" placeholder="예: 계획보다 레슨 1개 더 풀었어요"></label><p class="form-error" role="alert"></p><div class="dialog-actions">${entry.actual?btn('actual-clear','실제 내용 지우기','text-btn',`data-id="${esc(id)}" data-child="${esc(targetChild)}" data-day="${targetDay}"`):''}${btn('close','돌아가기')}<button type="submit" class="primary">실제 내용 저장</button></div></form>`);
-}
-function renderDailyFields(category,targetChild=childId){
-  const type=category==='__new__'?dialog.querySelector('[name="newCategoryType"]')?.value:categoryInfo(state,category)?.type,field=dialog.querySelector('[name="material"]'),show=['reading','math'].includes(type)||!!field.value;
-  dialog.querySelector('#daily-material-field').hidden=!show;
-  dialog.querySelector('#material-hint').textContent='전에 읽던 책이나 교재를 다시 골라도 좋아요.';
-  const recent=recentMaterials(state,targetChild,category);
-  dialog.querySelector('#recent-materials').innerHTML=recent.map(title=>`<option value="${esc(title)}"></option>`).join('');
-  dialog.querySelector('#recent-material-buttons').innerHTML=recent.slice(0,2).map(title=>btn('recent-material',esc(title),'text-btn',`data-material="${esc(title)}"`)).join('');
-}
-function renderRecentPlans(category,targetChild){
-  const box=dialog.querySelector('#recent-plan-box');if(!box)return;
-  const recent=recentDailyPlans(state,targetChild,category);
-  box.innerHTML=recent.length?`<div class="field"><span>전에 했던 일 다시 쓰기</span><div class="recent-plan-buttons">${recent.map(v=>btn('recent-plan',esc(taskLabel(v)),'secondary',`data-material="${esc(v.material)}" data-title="${esc(v.title)}"`)).join('')}</div></div>`:'';
-}
-function renderWeekCopy(category,targetChild,day){
-  const box=dialog.querySelector('#copy-week-box');if(!box)return;
-  const days=day>today()?weeklyCopyDates(state,targetChild,category,day):[];
-  box.innerHTML=days.length?`<div class="copy-week-option"><label><input type="checkbox" name="copyWeek"><span><strong>이번 주 다른 날에도 넣기</strong><small>원하는 날을 골라 같은 할 일을 넣어요.</small></span></label><fieldset class="copy-day-choices" hidden><legend>복사할 날</legend>${days.map(d=>`<label><input type="checkbox" name="copyDays" value="${d}" checked><span>${Number(d.slice(5,7))}/${Number(d.slice(8))} ${weekdays[dateObj(d).getDay()]}</span></label>`).join('')}<small>같은 묶음의 다른 할 일은 남고, 똑같은 할 일만 중복을 막아요.</small></fieldset></div>`:'';
-}
-function repeatEndControl(day,scope='week',endDate=''){
-  return `<label class="field">얼마나 반복할까요?<select name="repeatScope"><option value="week" ${scope==='week'?'selected':''}>시작하는 주만</option><option value="date" ${scope==='date'?'selected':''}>날짜까지</option><option value="ongoing" ${scope==='ongoing'?'selected':''}>종료일 없이 계속</option></select></label><label class="field repeat-end-date" ${scope==='date'?'':'hidden'}>마지막 반복 날짜<input type="date" name="repeatEndDate" min="${day}" value="${endDate}"><small>고른 날짜를 포함해 그날까지만 할 일이 나타나요.</small></label>`;
-}
-function updateRepeatEnd(){
-  const field=dialog.querySelector('.repeat-end-date');
-  if(field)field.hidden=dialog.querySelector('[name="repeatScope"]')?.value!=='date';
-}
-function renderRepeatSwitch(day){
-  const box=dialog.querySelector('#repeat-plan-switch');if(!box)return;
-  box.innerHTML=`<fieldset class="plan-mode"><legend>언제 할까요?</legend><label><input type="radio" name="planMode" value="once" checked><span>이날만</span></label><label><input type="radio" name="planMode" value="repeat"><span>반복하기</span></label></fieldset><div class="repeat-plan-fields" hidden><p>반복하는 날마다 같은 할 일이 나타나요. 책 제목이나 분량은 나중에 그날만, 또는 그날 이후로 바꿀 수 있어요.</p><div class="field"><span>할 요일</span><div class="days-choice">${[1,2,3,4,5,6,0].map(d=>`<label><input type="checkbox" name="repeatDays" value="${d}" ${d===dateObj(day).getDay()?'checked':''}><span>${weekdays[d]}</span></label>`).join('')}</div></div>${repeatEndControl(day)}</div>`;
-  const fields=box.querySelector('.repeat-plan-fields');
-  fields.querySelector('.days-choice').closest('.field').classList.add('repeat-weekdays');
-  fields.querySelector('p').insertAdjacentHTML('afterend','<label class="field">반복 방법<select name="repeatPattern"><option value="daily">매일</option><option value="weekdays">요일 고르기</option><option value="alternate">하루 걸러 격일</option></select></label>');
-  updateRepeatPattern();updateRepeatEnd();
-}
-function updateRepeatPattern(){const select=dialog.querySelector('[name="repeatPattern"]'),days=dialog.querySelector('.repeat-weekdays');if(days)days.hidden=select?.value!=='weekdays';}
-function updatePlanMode(){
-  const repeat=dialog.querySelector('[name="planMode"]:checked')?.value==='repeat';
-  const fields=dialog.querySelector('.repeat-plan-fields'),copy=dialog.querySelector('#copy-week-box');
-  if(fields)fields.hidden=!repeat;if(copy)copy.hidden=repeat;
-}
-function routineEditor(id,targetDay=date,targetChild=childId){
-  const habit=state.habits.find(h=>h.id===id&&h.childId===targetChild&&h.routinePlan),v=habit&&habitAt(habit,targetDay);
-  if(!v)throw new Error('이날의 반복 할 일을 찾을 수 없어요.');
-  const scope=habit.repeatScope||(habit.repeatUntil?'week':'ongoing'),category=categoryInfo(state,v.category);
-  modal(`${fmt(targetDay)} 반복 할 일 바꾸기`,`<form data-form="routine-plan" data-id="${esc(id)}" data-child="${esc(targetChild)}" data-day="${targetDay}"><p class="routine-help">${esc(category?.label||'할 일')} · ${esc(taskLabel(v))}</p><label class="field"><span id="material-label">책·교재 이름</span><input name="material" maxlength="100" value="${esc(v.material||'')}"><small id="material-hint"></small></label><label class="field">무엇을 얼마나 할까요?<input name="title" maxlength="60" value="${esc(v.title)}" required></label><fieldset class="plan-mode"><legend>어느 날을 바꿀까요?</legend><label><input type="radio" name="changeMode" value="day" checked><span>이날만</span></label><label><input type="radio" name="changeMode" value="future"><span>이날부터</span></label></fieldset><p class="routine-help">‘이날만’은 다른 날의 계획을 그대로 둬요. ‘이날부터’는 앞으로 할 내용도 함께 바꿔요.</p><details class="settings-section routine-schedule"><summary>반복 요일·기간 바꾸기</summary><div class="field"><span>할 요일</span><div class="days-choice">${[1,2,3,4,5,6,0].map(d=>`<label><input type="checkbox" name="repeatDays" value="${d}" ${v.days.includes(d)?'checked':''}><span>${weekdays[d]}</span></label>`).join('')}</div></div>${repeatEndControl(targetDay,scope,habit.repeatUntil?addDays(habit.repeatUntil,-1):'')}<small>요일·기간 변경은 ‘이날부터’를 골랐을 때 적용돼요.</small></details>${parentCheck()}<p class="form-error" role="alert"></p><div class="dialog-actions">${btn('close','돌아가기')}<button type="submit" class="primary">함께 확인하고 저장</button></div></form>`);
-  renderMaterial(v.category);
-  const schedule=dialog.querySelector('.routine-schedule');
-  schedule.querySelector('.days-choice').closest('.field').classList.add('repeat-weekdays');
-  schedule.querySelector('summary').insertAdjacentHTML('afterend',`<label class="field">반복 방법<select name="repeatPattern"><option value="daily" ${v.frequency==='daily'?'selected':''}>매일</option><option value="weekdays" ${v.frequency==='weekdays'?'selected':''}>요일 고르기</option><option value="alternate" ${v.frequency==='alternate'?'selected':''}>하루 걸러 격일</option></select></label>`);
-  updateRepeatPattern();updateRepeatEnd();
-}
+
 function commit(change,message,{keepPrevious=true}={}){
   try{const next=clone(state);change(next);touch(next);const saved=persist(next,localStorage,{keepPrevious});state=saved;generation++;lastSaved=new Date();if(cloudConfig?.enabled){cloudConfig.dirty=true;cloudMessage='';saveCloudConfig(cloudConfig);}render();if(message)toast(message);scheduleSync();return true;}
   catch(error){const message=error.name==='QuotaExceededError'?'저장 공간이 부족해 기록하지 못했어요. 먼저 백업해 주세요.':error.message||'저장하지 못했어요. 다시 시도해 주세요.';const target=dialog.open&&dialog.querySelector('.form-error');if(target)target.textContent=message;else toast(message);return false;}
 }
 function modal(title,body,actions=''){dialog.innerHTML=`<div class="dialog-inner"><div class="dialog-head"><h2 id="dialog-title">${title}</h2>${btn('close',icon('close'),'icon-btn','aria-label="닫기"')}</div>${body}${actions?`<div class="dialog-actions">${actions}</div>`:''}</div>`;if(!dialog.open)dialog.showModal();}
 function confirmModal(title,body,action,label,attrs=''){const shared=['weekly-remove-confirm','remove-reward-confirm'].includes(action);modal(title,`<p>${body}</p>${shared?parentCheck()+'<p class="form-error" role="alert"></p>':''}`,btn('close','돌아가기')+btn(action,shared?'함께 확인하고 '+label:label,'primary',attrs));}
-function managerAddDialog(){
-  const chosen=managerFilter==='all'?childId:managerFilter;
-  modal('할 일 추가',`<form data-form="manager-add"><label class="field">누구의 할 일인가요?<select name="child">${state.children.map(child=>`<option value="${esc(child.id)}" ${child.id===chosen?'selected':''}>${esc(child.name)}</option>`).join('')}</select></label><label class="field">어떤 계획인가요?<select name="kind"><option value="daily">오늘·내일 할 일 (반복도 가능)</option><option value="weekly">이번 주의 반복 일정</option><option value="legacy">날짜·횟수를 직접 정하는 할 일</option></select></label><label class="field">상위 묶음<select name="category"><option value="${UNGROUPED}">묶음 없이</option>${activeCategories(state).map(category=>`<option value="${esc(category.id)}">${esc(category.label)}</option>`).join('')}</select></label><label class="field" id="manager-day-field">할 날짜<select name="day"><option value="${today()}">오늘</option><option value="${addDays(today(),1)}">내일</option></select></label><p class="form-error" role="alert"></p><div class="dialog-actions">${btn('close','돌아가기')}<button type="submit" class="primary">다음</button></div></form>`);
-}
-function confirmWeeklyRemove(category,targetChild=childId,targetStart=weekStart(today())){
-  const next=targetStart===addDays(weekStart(today()),7),effectiveDate=next?targetStart:today();
-  const c=categoryInfo(state,category);
-  confirmModal(`${next?'다음':'이번'} 주 일정을 지울까요?`,`‘${esc(c.label)}’의 반복 일정을 ${next?'다음 주 월요일':'오늘'}부터 그만해요. 이미 정한 날짜별 할 일과 완료 기록은 남아요.`,'weekly-remove-confirm','일정 삭제',`data-category="${esc(category)}" data-child="${esc(targetChild)}" data-effective-date="${effectiveDate}"`);
-}
-function confirmDailyRemove(id,targetChild=childId){
-  taskRemovalDialog(id,targetChild);
-}
-function confirmHabitRemove(id){
-  taskRemovalDialog(id);
-}
-function taskRemovalDialog(id,targetChild=childId){
-  const h=state.habits.find(h=>h.id===id);
-  if(!h||h.childId!==targetChild)throw new Error('할 일을 찾을 수 없어요.');
-  const v=habitAt(h,today())||h.versions.at(-1),records=Object.values(state.entries).filter(e=>e.habitId===id),points=records.reduce((sum,e)=>sum+e.points,0),balance=starSummary(state,h.childId).balance,active=(!h.archivedFrom||h.archivedFrom>today())&&(!h.repeatUntil||h.repeatUntil>today());
-  if(h.weeklyFallbackFor){modal('묶음 실천 기록을 지울까요?',`<p><strong>${esc(taskLabel(v))}</strong> · 실천 ${records.length}번 · 별 ${points}개</p><p>이 묶음 이름으로 남긴 실천 기록과 별을 모두 지워요. 이번 주에 정한 요일은 유지되어 해당 날짜의 실천 항목은 다시 나타날 수 있어요. 한 날짜의 완료만 취소하려면 그날의 오늘 할 일에서 ‘했어요!’를 눌러 주세요.</p>${parentCheck()}<p class="form-error" role="alert"></p>`,btn('close','돌아가기')+btn('erase-task-confirm','묶음 실천 기록 지우기','secondary danger',`data-id="${esc(id)}"`));return;}
-  modal('할 일을 어떻게 정리할까요?',`<p><strong>${esc(taskLabel(v))}</strong></p><p>앞으로 그만하면 지난 실천과 별은 남아요. 잘못 만들었거나 시험용이었다면 앱 기록에서 완전히 지울 수 있어요.</p><p>이 할 일의 실천 ${records.length}번 · 별 ${points}개${points&&balance-points<0?' · 지우면 사용한 별이 더 많아져 잔액이 음수가 돼요.':''}</p><p>지우면 이 기기의 현재 기록과 복구용 이전 저장본에서 사라져요. 가족 연결 기록에는 동기화 후 반영되지만, 이전에 내려받은 백업 파일과 Google 시트의 이전 저장본은 따로 남을 수 있어요.</p>${parentCheck()}<p class="form-error" role="alert"></p>`,btn('close','돌아가기')+(active?btn('stop-task-confirm','앞으로 그만하기','secondary',`data-id="${esc(id)}"`):'')+btn('erase-task-confirm','앱 기록에서 완전히 지우기','secondary danger',`data-id="${esc(id)}"`));
-}
-function routineRemovalDialog(id,targetDay=date,targetChild=childId){
-  const habit=state.habits.find(h=>h.id===id&&h.childId===targetChild&&h.routinePlan),version=habit&&habitAt(habit,targetDay);
-  if(!version)throw new Error('이날의 반복 할 일을 찾을 수 없어요.');
-  const completed=!!state.entries[`${targetChild}/${id}/${targetDay}`]||state.habits.some(item=>item.replacesHabitId===id&&!!state.entries[`${targetChild}/${item.id}/${targetDay}`]);
-  modal('반복 할 일을 어떻게 할까요?',`<p><strong>${esc(taskLabel(version))}</strong> · ${fmt(targetDay)}</p><p>이날만 빼면 다른 날의 반복은 그대로예요. 이날부터 그만하면 지난 실천과 별은 남고 앞으로의 할 일이 사라져요.</p>${completed?'<p>이미 완료한 날이에요. 이 날짜의 계획을 빼려면 먼저 완료를 취소해 주세요.</p>':''}${parentCheck()}<p class="form-error" role="alert"></p>`,btn('close','돌아가기')+(completed?'':btn('routine-skip-confirm','이날만 빼기','secondary',`data-id="${esc(id)}" data-child="${esc(targetChild)}" data-day="${targetDay}"`))+btn('routine-stop-confirm',completed?'다음 날부터 그만하기':'이날부터 그만하기','secondary',`data-id="${esc(id)}" data-child="${esc(targetChild)}" data-day="${completed?addDays(targetDay,1):targetDay}"`));
-}
-function habitEditor(id,category='reading',targetChild=childId){
-  const h=state.habits.find(h=>h.id===id&&h.childId===targetChild),v=h?(habitAt(h,today())||h.versions.at(-1)):{title:'',material:'',detail:'',category:activeCategories(state).some(c=>c.id===category)?category:activeCategories(state)[0].id,frequency:'once',days:[1,2,3,4,5],target:3,points:1,dueDate:today()};
-  modal(h?'구체적인 할 일 바꾸기':'구체적인 할 일 추가',`<form data-form="habit" data-id="${esc(id||'')}" data-child="${esc(targetChild)}"><label class="field">상위 묶음<select name="category">${activeCategories(state).map(c=>`<option value="${esc(c.id)}" ${c.id===v.category?'selected':''}>${esc(c.label)}</option>`).join('')}</select></label><label class="field"><span id="material-label">책·교재 이름</span><input name="material" value="${esc(v.material||'')}" maxlength="100"><small id="material-hint"></small></label><label class="field">구체적인 할 일·분량<input name="title" value="${esc(v.title)}" placeholder="예: 1~2장 읽기 / A1권 1~2쪽 풀기" maxlength="60" required></label><label class="field">완료 기준 또는 도움말<input name="detail" value="${esc(v.detail)}" placeholder="예: 읽은 내용을 한 문장으로 이야기해요" maxlength="160"></label><label class="field">언제 할까요?<select name="frequency">${[['once','정한 날짜에 한 번'],['daily','매일'],['weekdays','요일을 골라서'],['weekly','일주일에 몇 번'],['monthly','한 달에 몇 번']].map(([id,label])=>`<option value="${id}" ${id===v.frequency?'selected':''}>${label}</option>`).join('')}</select></label><div id="frequency-extra"></div><label class="field">완료하면 받는 별<input type="number" name="points" min="0" max="20" value="${v.points}" required><small>상위 묶음에는 별을 주지 않고, 이 할 일을 완료할 때만 적립해요.</small></label>${id?parentCheck():''}<p class="form-error" role="alert"></p><div class="dialog-actions">${btn('close','돌아가기')}<button class="primary" type="submit">할 일 저장</button></div></form>`);
-  renderFrequency(v.frequency,v);renderMaterial(v.category);
-}
-function renderMaterial(category){
-  const field=dialog.querySelector('[name="material"]');if(!field)return;
-  const type=category==='__new__'?dialog.querySelector('[name="newCategoryType"]')?.value:categoryInfo(state,category)?.type;
-  const required=['reading','math'].includes(type);field.required=required;
-  dialog.querySelector('#material-label').textContent=type==='reading'?'책 제목':type==='math'?'교재 이름':'책·교재·준비물 이름 (선택)';
-  field.placeholder=type==='reading'?'예: 톰 소여의 모험':type==='math'?'예: 눈높이 수학':'해당하는 경우 적어 주세요';
-  dialog.querySelector('#material-hint').textContent=required?'완료하면 이 이름과 분량이 월간 기록에 함께 남아요.':'이름 없이 구체적인 할 일만 적어도 괜찮아요.';
-}
-function renderFrequency(f,v={days:[1,2,3,4,5],target:3,dueDate:today()}){const target=dialog.querySelector('#frequency-extra');if(!target)return;target.innerHTML=f==='weekdays'?`<div class="field"><span>실천할 요일</span><div class="days-choice">${[1,2,3,4,5,6,0].map(d=>`<label><input type="checkbox" name="days" value="${d}" ${v.days?.includes(d)?'checked':''}><span>${weekdays[d]}</span></label>`).join('')}</div></div>`:['weekly','monthly'].includes(f)?`<label class="field">${f==='weekly'?'일주일':'한 달'}에 몇 번 할까요?<input type="number" name="target" min="1" max="${f==='weekly'?7:31}" value="${v.target||3}" required><small>하루에 한 번씩 기록해요. 요일은 자유롭게 고를 수 있어요.</small></label>`:f==='once'?`<label class="field">활동 날짜<input type="date" name="dueDate" min="${today()}" value="${v.dueDate||today()}" required></label>`:'';}
 function childEditor(id){const c=state.children.find(c=>c.id===id);selectedAvatar=c.avatar;modal('나를 소개해요',`<form data-form="child" data-id="${esc(id)}"><p class="avatar-help">좋아하는 12간지 동물을 골라요.</p><div class="avatar-choice" role="group" aria-label="12간지 캐릭터">${ZODIAC_AVATARS.map(([a,label])=>btn('avatar',`${avatar(a)}<span>${label}</span>`,a===selectedAvatar?'active':'',`data-avatar="${a}" aria-label="${label}" aria-pressed="${a===selectedAvatar}"`)).join('')}</div>${['fox','bear','cat'].includes(c.avatar)?`<div class="legacy-avatar">${btn('avatar',`${avatar(c.avatar)}<span>기존 캐릭터 유지</span>`,'active',`data-avatar="${c.avatar}" aria-pressed="true"`)}</div>`:''}<label class="field">이름 또는 별명<input name="name" maxlength="30" value="${esc(c.name)}" required></label><label class="field">기록하는 방법<select name="style"><option value="independent" ${c.style==='independent'?'selected':''}>스스로 확인하고 기록해요</option><option value="together" ${c.style==='together'?'selected':''}>부모와 함께 기록해요</option></select></label><p class="form-error" role="alert"></p><div class="dialog-actions">${btn('close','돌아가기')}<button type="submit" class="primary">저장</button></div></form>`);}
 function rewardEditor(id){const r=state.rewards.find(r=>r.id===id)||{title:'',cost:10};modal(id?'선물 바꾸기':'새로운 선물',`<form data-form="reward" data-id="${esc(id||'')}"><label class="field">함께 약속한 선물<input name="title" value="${esc(r.title)}" maxlength="60" required placeholder="예: 주말 놀이 고르기"></label><label class="field">필요한 별<input name="cost" type="number" min="1" max="9999" value="${r.cost}" required></label><p class="form-error" role="alert"></p><div class="dialog-actions">${btn('close','돌아가기')}<button class="primary" type="submit">저장</button></div></form>`);}
 function download(content,name,type){const url=URL.createObjectURL(new Blob([content],{type}));const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);}
@@ -269,70 +158,39 @@ document.addEventListener('click',event=>{
   const el=event.target.closest('[data-action]');if(!el||el.disabled)return;const action=el.dataset.action,id=el.dataset.id;
   try{
     if(action==='close'){dialog.close();return;}
-    if(action==='weekly-week'){weeklyStart=el.dataset.start;render();return;}
-    if(action==='weekly-open-task'){childId=el.dataset.child;date=el.dataset.day;page='today';render();const card=[...root.querySelectorAll('[data-habit-id]')].find(node=>node.dataset.habitId===id);if(card){card.closest('details')?.setAttribute('open','');card.focus({preventScroll:true});card.scrollIntoView({block:'center'});}return;}
-    if(action==='weekly-edit'){
-      if(canResetStoppedWeeklyPlan(state,childId,el.dataset.category)){
-        if(!commit(s=>{s.weeklyPlans=s.weeklyPlans.filter(p=>p.childId!==childId||p.category!==el.dataset.category);},'사용하지 않는 이전 일정을 정리했어요.'))return;
-      }
-      weeklyEditor(el.dataset.category,childId,el.dataset.start);return;
-    }
-    if(action==='weekly-remove'){confirmWeeklyRemove(el.dataset.category,el.dataset.child||childId,el.dataset.start);return;}
-    if(action==='weekly-remove-confirm'){requireParent();if(commit(s=>saveWeeklyPlan(s,el.dataset.child||childId,el.dataset.category,{mode:'off'},true,el.dataset.effectiveDate),'선택한 주의 일정을 지웠어요.'))dialog.close();return;}
-    if(action==='daily-add'||action==='daily-edit'){if(id&&state.habits.find(h=>h.id===id)?.routinePlan)routineEditor(id);else dailyEditor(id,el.dataset.category);return;}
-    if(action==='recent-material'){dialog.querySelector('[name="material"]').value=el.dataset.material;return;}
-    if(action==='recent-plan'){dialog.querySelector('[name="material"]').value=el.dataset.material;dialog.querySelector('[name="title"]').value=el.dataset.title;renderDailyFields(dialog.querySelector('[name="category"]').value,dialog.querySelector('[data-form="daily-plan"]').dataset.child);return;}
-    if(action==='daily-remove'){{const habit=state.habits.find(h=>h.id===id);if(habit?.routinePlan||habit?.replacesHabitId)routineRemovalDialog(habit.replacesHabitId||id,date,habit.childId);else confirmDailyRemove(id,el.dataset.child||dialog.querySelector('[data-form="daily-plan"]')?.dataset.child||childId);}return;}
-    if(action==='manager-scope'){managerScope=el.dataset.scope;render();return;}
-    if(action==='manager-view'){managerView=el.dataset.view;render();return;}
-    if(action==='manager-filter'){managerFilter=el.dataset.child;render();return;}
-    if(action==='manager-add'){managerAddDialog();return;}
-    if(action==='manager-open-day'){childId=el.dataset.child;date=el.dataset.day;page='today';render();window.scrollTo({top:0});return;}
-    if(action==='manager-edit'){
-      if(el.dataset.kind==='weekly')weeklyEditor(el.dataset.category,el.dataset.child);
-      else if(el.dataset.kind==='daily')dailyEditor(id,el.dataset.category,el.dataset.child,el.dataset.day);
-      else if(el.dataset.kind==='routine')routineEditor(id,el.dataset.day,el.dataset.child);
-      else habitEditor(id,el.dataset.category,el.dataset.child);
-      return;
-    }
-    if(action==='manager-delete'){
-      if(el.dataset.kind==='weekly')confirmWeeklyRemove(el.dataset.category,el.dataset.child);
-      else taskRemovalDialog(id,el.dataset.child);
-      return;
-    }
-    if(action==='manager-manage'){if(el.dataset.kind==='routine'&&managerScope==='current')routineRemovalDialog(id,el.dataset.day,el.dataset.child);else taskRemovalDialog(id,el.dataset.child);return;}
-    if(action==='page'){page=el.dataset.page;if(page==='today')date=today();render();window.scrollTo({top:0});return;}
+    if(action==='work-view'){workView=el.dataset.view;if(workView==='week')weeklyStart=weekStart(date);render();return;}
+    if(action==='work-date'){date=el.dataset.day;workView='day';page='work';render();return;}
+    if(action==='work-week'){weeklyStart=el.dataset.start;render();return;}
+    if(action==='work-list'){listMode=el.dataset.mode;render();return;}
+    if(action==='work-group'){listGroup=el.dataset.group;render();return;}
+    if(action==='task-new'||action==='task-edit'){openTask(id,el.dataset.child||childId,el.dataset.day||date,el.dataset.series==='true');return;}
+    if(action==='task-preset'){for(const name of ['title','material','detail','themeId']){const input=dialog.querySelector('[name="'+name+'"]');if(input)input.value=el.dataset[name==='themeId'?'theme':name]||'';}return;}
+    if(action==='task-done'){commit(s=>completeTask(s,el.dataset.child||childId,id,el.dataset.day||date),'작은 실천 하나를 남겼어요.');return;}
+    if(action==='task-undo'){commit(s=>undoDone(s,el.dataset.child||childId,id,el.dataset.day||date),'완료를 취소했어요.');return;}
+    if(action==='flex-pick'){modal('언제 할까요?','<form data-form="flex-date" data-id="'+esc(id)+'" data-child="'+esc(el.dataset.child)+'"><label class="field">할 날짜<input type="date" name="date" min="'+(el.dataset.start>today()?el.dataset.start:today())+'" max="'+el.dataset.end+'" value="'+(el.dataset.day>today()?el.dataset.day:today())+'" required></label><p>고른 날짜의 할 일에도 나타나요. 완료해야 주간 실천 횟수가 늘어요.</p><p class="form-error" role="alert"></p><div class="dialog-actions">'+btn('close','돌아가기')+'<button type="submit" class="primary">할 날 정하기</button></div></form>');return;}
+    if(action==='flex-assign'){commit(s=>assignFlexible(s,el.dataset.child||childId,id,el.dataset.day),'할 날을 정했어요.');return;}
+    if(action==='task-remove'){removeDialog(id,el.dataset.child,el.dataset.day);return;}
+    if(action==='task-restore'){modal('할 일을 되돌릴까요?','<p>삭제할 때 함께 보관한 기록과 별도 돌아와요.</p>'+parentCheck()+'<p class="form-error" role="alert"></p>',btn('close','돌아가기')+btn('task-restore-confirm','되돌리기','primary','data-id="'+esc(id)+'"'));return;}
+    if(action==='task-restore-confirm'){requireParent();if(commit(s=>restoreTask(s,id,true),'할 일을 되돌렸어요.'))dialog.close();return;}
+    if(action==='page'){page=el.dataset.page;if(page==='records')date=today();render();window.scrollTo({top:0});return;}
     if(action==='child'){childId=id;render();return;}
     if(action==='date'){date=el.dataset.date;render();return;}
     if(action==='date-today'){date=today();render();return;}
     if(action==='day-prev'||action==='day-next'){date=addDays(date,action==='day-prev'?-1:1);render();return;}
-    if(action==='done'){commit(s=>markDone(s,childId,id,date),'멋져요! 작은 실천 하나를 남겼어요.');return;}
-    if(action==='undo'){commit(s=>undoDone(s,childId,id,date),'완료를 취소했어요.');return;}
-    if(action==='actual-edit'){actualEditor(id,el.dataset.child||childId,el.dataset.day||date);return;}
-    if(action==='actual-clear'){if(commit(s=>clearActual(s,el.dataset.child,id,el.dataset.day),'실제 내용을 지우고 계획한 내용만 남겼어요.'))dialog.close();return;}
+    if(action==='actual-edit'){openTask(id,el.dataset.child||childId,el.dataset.day||date);return;}
     if(action==='rest'){commit(s=>{s.restDays[restKey(date)]=!s.restDays[restKey(date)];},state.restDays[restKey(date)]?'다시 약속을 확인해요.':'오늘은 편하게 쉬어 가요.');return;}
     if(action==='record-tab'){recordTab=el.dataset.tab;render();return;}
     if(action==='week-prev'||action==='week-next'){date=addDays(date,action==='week-prev'?-7:7);if(date>today())date=today();render();return;}
     if(action==='month-prev'||action==='month-next'){const d=dateObj(`${recordMonth}-01`);d.setMonth(d.getMonth()+(action==='month-prev'?-1:1));recordMonth=today(d).slice(0,7);selectedCalendarDay=recordMonth===today().slice(0,7)?today():`${recordMonth}-01`;render();return;}
     if(action==='calendar-date'){selectedCalendarDay=el.dataset.date;render();return;}
-    if(action==='edit-date'){date=el.dataset.date;page='today';render();return;}
+    if(action==='edit-date'){date=el.dataset.date;page='work';workView='day';render();return;}
     if(action==='print'){window.print();return;}
+    if(action==='theme-add'||action==='theme-edit'){themeEditor(id);return;}
+    if(action==='theme-move'){commit(s=>moveTheme(s,id,Number(el.dataset.direction)),'주제 순서를 바꿨어요.');return;}
+    if(action==='theme-delete'){modal('성장 주제를 지울까요?','<form data-form="theme-delete" data-id="'+esc(id)+'"><p>앞으로 할 일은 다른 주제로 옮기고 지난 실천과 별은 남겨요.</p><label class="field">옮길 주제<select name="destination">'+themes(state).filter(t=>t.id!==id).map(t=>'<option value="'+t.id+'">'+esc(t.childLabel)+'</option>').join('')+'</select></label>'+parentCheck()+'<p class="form-error" role="alert"></p><div class="dialog-actions">'+btn('close','돌아가기')+'<button class="primary" type="submit">옮기고 삭제</button></div></form>');return;}
     if(action==='add-category'||action==='edit-category'){categoryEditor(id);return;}
     if(action==='move-category'){commit(s=>moveCategory(s,id,Number(el.dataset.direction)),'상위 묶음 순서를 바꿨어요.');return;}
     if(action==='delete-category'){categoryDeleteDialog(id);return;}
-    if(action==='add-habit'){dailyEditor(null,el.dataset.category);return;}
-    if(action==='edit-habit'){habitEditor(id,el.dataset.category);return;}
-    if(action==='archive-habit'){confirmHabitRemove(id);return;}
-    if(action==='routine-skip-confirm'){requireParent();if(commit(s=>skipRoutineDate(s,el.dataset.child,id,el.dataset.day,true),'이날만 계획에서 뺐어요. 설정에서 다시 넣을 수 있어요.'))dialog.close();return;}
-    if(action==='routine-stop-confirm'){requireParent();if(commit(s=>stopHabit(s,id,true,el.dataset.day),'이날부터 반복을 그만했어요. 지난 기록과 별은 남아요.'))dialog.close();return;}
-    if(action==='manager-restore'){
-      const habit=state.habits.find(h=>h.id===id&&h.childId===el.dataset.child),version=habit?.versions.at(-1);
-      if(!version)throw new Error('할 일을 찾을 수 없어요.');
-      modal('이날 할 일을 다시 넣을까요?',`<p>${fmt(el.dataset.day)} · ${esc(taskLabel(version))}</p>${parentCheck()}<p class="form-error" role="alert"></p>`,btn('close','돌아가기')+btn('routine-restore-confirm','이날 다시 넣기','primary',`data-id="${esc(id)}" data-child="${esc(el.dataset.child)}" data-day="${el.dataset.day}"`));return;
-    }
-    if(action==='routine-restore-confirm'){requireParent();if(commit(s=>restoreRoutineDate(s,el.dataset.child,id,el.dataset.day,true),'이날 할 일을 다시 넣었어요.'))dialog.close();return;}
-    if(action==='stop-task-confirm'){requireParent();if(commit(s=>stopHabit(s,id,true),'앞으로의 할 일에서 뺐어요. 지난 기록은 남아요.'))dialog.close();return;}
-    if(action==='erase-task-confirm'){requireParent();if(commit(s=>eraseHabit(s,id,true),'잘못 만든 할 일과 해당 실천 기록을 지웠어요.',{keepPrevious:false}))dialog.close();return;}
     if(action==='edit-child'){childEditor(id);return;}
     if(action==='avatar'){selectedAvatar=el.dataset.avatar;dialog.querySelectorAll('[data-action="avatar"]').forEach(b=>{b.classList.toggle('active',b.dataset.avatar===selectedAvatar);b.setAttribute('aria-pressed',String(b.dataset.avatar===selectedAvatar));});return;}
     if(action==='add-reward'||action==='edit-reward'){rewardEditor(id);return;}
@@ -363,15 +221,8 @@ document.addEventListener('click',event=>{
   }catch(error){const target=dialog.open&&dialog.querySelector('.form-error');if(target)target.textContent=error.message;else toast(error.message);}
 });
 document.addEventListener('change',async event=>{
-  if(event.target.name==='planMode')updatePlanMode();
-  if(event.target.name==='repeatPattern')updateRepeatPattern();
-  if(event.target.name==='repeatScope')updateRepeatEnd();
-  if(event.target.name==='copyWeek'){const choices=dialog.querySelector('.copy-day-choices');if(choices)choices.hidden=!event.target.checked;}
-  if(event.target.name==='category'&&!dialog.querySelector('[data-form="manager-add"]')){renderMaterial(event.target.value);const form=dialog.querySelector('[data-form="daily-plan"]');if(form){form.querySelector('#new-category-fields').hidden=event.target.value!=='__new__';renderDailyFields(event.target.value,form.dataset.child);renderRecentPlans(event.target.value,form.dataset.child);renderWeekCopy(event.target.value,form.dataset.child,form.dataset.day);updatePlanMode();}}
-  if(event.target.name==='newCategoryType'){renderMaterial('__new__');const form=dialog.querySelector('[data-form="daily-plan"]');if(form)renderDailyFields('__new__',form.dataset.child);}
-  if(event.target.name==='kind'&&dialog.querySelector('[data-form="manager-add"]'))dialog.querySelector('#manager-day-field').hidden=event.target.value!=='daily';
-  if(event.target.name==='weeklyMode')renderWeeklyExtra(event.target.value);
-  if(event.target.name==='frequency')renderFrequency(event.target.value);
+  if(event.target.hasAttribute('data-work-date')){if(event.target.value){date=event.target.value;render();}return;}
+  if(event.target.closest('[data-form="task"]'))updateTaskFields();
   if(event.target.id==='import-file'){
     const file=event.target.files?.[0];if(!file)return;
     try{if(file.size>20_000_000)throw new Error('20MB 이하의 백업 파일을 선택해 주세요.');pendingImport=readBackup(await file.text());confirmModal('이 백업을 가져올까요?',`아이 ${pendingImport.children.length}명, 실천 ${Object.keys(pendingImport.entries).length}개가 들어 있어요. 현재 기록은 먼저 백업 파일로 내려받은 뒤 이 백업으로 바꿉니다.`,'import-confirm','백업하고 가져오기');}
@@ -381,28 +232,13 @@ document.addEventListener('change',async event=>{
 document.addEventListener('submit',async event=>{
   const form=event.target.closest('[data-form]');if(!form)return;event.preventDefault();const data=new FormData(form),type=form.dataset.form,id=form.dataset.id;
   try{
-    if(type==='manager-add'){
-      const targetChild=data.get('child'),category=data.get('category');
-      if(data.get('kind')==='weekly'){if(category===UNGROUPED)throw new Error('이번 주 반복 일정은 묶음을 골라 주세요.');weeklyEditor(category,targetChild);}
-      else if(data.get('kind')==='daily')dailyEditor(null,category,targetChild,data.get('day'));
-      else {if(category===UNGROUPED)throw new Error('묶음 없는 할 일은 오늘·내일 할 일에서 정해 주세요.');habitEditor(null,category,targetChild);}
-      return;
-    }
-    if(type==='weekly-plan'){const choice=data.get('weeklyMode'),mode=['mwf','weekdays','custom'].includes(choice)?'days':choice,days=choice==='mwf'?[1,3,5]:choice==='weekdays'?[1,2,3,4,5]:data.getAll('weeklyDays').map(Number);if(commit(s=>saveWeeklyPlan(s,form.dataset.child,form.dataset.category,{mode,days,anchorDate:data.get('anchorDate')},data.has('parentConfirmed'),form.dataset.effectiveDate),'선택한 주의 할 일을 저장했어요.'))dialog.close();}
-    if(type==='daily-plan'){
-      const values=Object.fromEntries(data);
-      const withCategory=(s,action)=>{if(values.category==='__new__')values.category=saveCategory(s,null,{label:values.newCategoryLabel,type:values.newCategoryType});return action(s);};
-      if(!id&&data.get('planMode')==='repeat'){
-        if(commit(s=>withCategory(s,()=>saveRoutinePlan(s,form.dataset.child,{...values,days:data.getAll('repeatDays')},form.dataset.day)),'반복할 일을 정했어요.'))dialog.close();
-      }else{
-        if(data.has('copyWeek')&&!data.getAll('copyDays').length)throw new Error('복사할 날을 하나 이상 골라 주세요.');
-        if(commit(s=>withCategory(s,()=>{const savedId=saveDailyPlan(s,form.dataset.child,id,values,form.dataset.day,data.has('parentConfirmed'));if(!id&&data.has('copyWeek'))copyDailyPlanToWeek(s,form.dataset.child,savedId,form.dataset.day,data.getAll('copyDays'));}),data.has('copyWeek')?'할 일을 정하고 고른 날에도 넣었어요.':'할 일을 정했어요.'))dialog.close();
-      }
-    }
-    if(type==='actual'){if(commit(s=>saveActual(s,form.dataset.child,id,form.dataset.day,Object.fromEntries(data)),'실제로 한 내용을 기록했어요.'))dialog.close();}
-    if(type==='routine-plan'){if(commit(s=>updateRoutinePlan(s,form.dataset.child,id,{...Object.fromEntries(data),days:data.getAll('repeatDays')},form.dataset.day,data.get('changeMode'),data.has('parentConfirmed')),'반복할 일을 바꿨어요.'))dialog.close();}
+    if(type==='theme'){if(commit(s=>saveTheme(s,id,Object.fromEntries(data)),'성장 주제를 저장했어요.'))dialog.close();return;}
+    if(type==='theme-delete'){requireParent(form);if(commit(s=>removeTheme(s,id,data.get('destination')),'주제를 정리했어요.'))dialog.close();return;}
+    if(type==='flex-date'){if(commit(s=>assignFlexible(s,form.dataset.child,id,data.get('date')),'할 날을 정했어요.'))dialog.close();return;}
+    if(type==='task'){const values={...Object.fromEntries(data),days:data.getAll('days').map(Number),recordAfter:data.has('recordAfter'),correctPlan:data.has('correctPlan')};if(commit(s=>saveTask(s,form.dataset.child,id,form.dataset.day,values,data.has('parentConfirmed')),'할 일과 기록을 저장했어요.'))dialog.close();return;}
+    if(type==='task-remove'){if(commit(s=>removeTask(s,form.dataset.child,id,form.dataset.day,data.get('scope'),data.has('parentConfirmed')),'할 일을 정리했어요.'))dialog.close();return;}
     if((type==='category'||type==='habit')&&id||type==='delete-category')requireParent(form);
-    if(type==='category'){if(commit(s=>saveCategory(s,id,Object.fromEntries(data)),'상위 묶음을 저장했어요.'))dialog.close();}
+    if(type==='category'){if(commit(s=>{for(const e of Object.values(s.entries))e.snapshot.themeId||=themeFor(s,e.snapshot).id;const key=saveCategory(s,id,Object.fromEntries(data));s.categories.find(c=>c.id===key).themeId=data.get('themeId');},'상위 묶음을 저장했어요.'))dialog.close();}
     if(type==='delete-category'){if(commit(s=>deleteCategory(s,id,data.get('destination')),'묶음을 삭제했어요. 지난 기록과 별은 그대로예요.'))dialog.close();}
     if(type==='habit'){const values=Object.fromEntries(data);values.days=data.getAll('days').map(Number);if(commit(s=>saveHabit(s,form.dataset.child||childId,id,values),'구체적인 할 일을 저장했어요.'))dialog.close();}
     if(type==='child'){const name=String(data.get('name')).trim();if(!name)throw new Error('이름을 적어 주세요.');if(commit(s=>{Object.assign(s.children.find(c=>c.id===id),{name,avatar:selectedAvatar,style:data.get('style')});},'이름과 모습을 바꿨어요.'))dialog.close();}
@@ -416,7 +252,7 @@ window.addEventListener('storage',event=>{if(event.key===STORE_KEY&&event.newVal
 window.addEventListener('online',()=>syncCloud());
 setInterval(()=>{if(document.visibilityState==='visible'&&state)syncCloud();},30000);
 dialog.addEventListener('close',()=>{if(pendingRemote){pendingRemote.bridge.close();pendingRemote=null;setCloudMessage('');}});
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&state){if(date>addDays(today(),1))date=today();syncCloud();}});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&state){syncCloud();}});
 dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
 let printFolds=[];
 window.addEventListener('beforeprint',()=>{printFolds=[...root.querySelectorAll('details[data-fold]')].map(el=>[el,el.open]);printFolds.forEach(([el])=>el.open=true);});

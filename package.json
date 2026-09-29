@@ -7,6 +7,6 @@
   "scripts": {
     "start": "node scripts/serve.mjs",
     "test": "node --test tests/*.test.mjs",
-    "check": "node --check app.js && node --check engine.js && node --check storage.js && node --check cloud.js && node --check sw.js && node --check hierarchy.js && node --check planner-ui.js && node scripts/check-version.mjs"
+    "check": "node --check work.js && node --check work-ui.js && node --check app.js && node --check engine.js && node --check storage.js && node --check cloud.js && node --check sw.js && node --check hierarchy.js && node --check planner-ui.js && node scripts/check-version.mjs"
   }
 }
