@@ -11,6 +11,7 @@ const root=document.querySelector('#app'),dialog=document.querySelector('#dialog
 const loaded=loadState();let state=loaded.state;
 let page='work',workView='day',listMode='current',listGroup='date',childId=state?.children[0].id,date=today(),weeklyStart=weekStart(today()),recordTab='week',recordMonth=today().slice(0,7),selectedCalendarDay=today();
 let toastTimer,cloud=null,cloudConfig=readCloudConfig(),syncBusy=false,cloudMessage='',generation=0,lastSaved=null,selectedAvatar='fox';
+const weekExpanded=new Set();
 const weekdays=['일','월','화','수','목','금','토'];
 const navItems=[['work','home','할 일'],['records','chart','내 기록'],['rewards','star','별 모으기'],['parent','settings','설정']];
 const child=()=>state.children.find(c=>c.id===childId)||state.children[0];
@@ -27,7 +28,7 @@ function render(){
   if(!state){renderRecovery();return;}
   if(!state.children.some(c=>c.id===childId))childId=state.children[0].id;
   rememberFolds(root);
-  const html=page==='work'?workspace(state,childId,{view:workView,day:date,week:weeklyStart,listMode,listGroup,saveLabel:saveLabel()},btn):page==='records'?renderRecords():page==='rewards'?renderRewards():renderParent();
+  const html=page==='work'?workspace(state,childId,{view:workView,day:date,week:weeklyStart,listMode,listGroup,expandedDays:[...weekExpanded].filter(key=>key.startsWith(childId+'/')).map(key=>key.split('/')[1]),saveLabel:saveLabel()},btn):page==='records'?renderRecords():page==='rewards'?renderRewards():renderParent();
   root.innerHTML=`<div class="shell"><aside class="sidebar">${brand()}${navigation('nav')}<div class="sidebar-bottom"><div class="sprout">${icon('leaf')}<br>하루의 작은 실천이<br>나만의 습관이 되어요.</div>우리 가족의 작은 성장 기록<br>Habit Builder · 0.4</div></aside><div class="content"><header class="topbar"><div class="desktop-date"><div class="eyebrow">OUR LITTLE EVERYDAY</div><div class="date-label">${today().slice(0,4)}년 ${fmt(today())}</div></div>${brand(true)}<div class="profile-switch" aria-label="아이 선택">${state.children.map(c=>btn('child',`${avatar(c.avatar)}<span>${esc(c.name)}</span>`,c.id===childId?'active':'',`data-id="${esc(c.id)}" aria-pressed="${c.id===childId}"`)).join('')}</div></header><main id="main" tabindex="-1">${loaded.warning?`<div class="banner">${esc(loaded.warning)}</div>`:''}${html}</main></div>${navigation('mobile-nav')}</div>`;
 }
 function renderRecovery(){root.innerHTML=`<main class="content"><div class="danger-box"><h1>기록을 먼저 확인해 주세요</h1><p>${esc(loaded.warning)}</p><p>이전 저장본으로 복구하거나, 원본 파일을 내려받아 보관할 수 있어요.</p><div class="button-row">${btn('recover','이전 저장본 복구','primary')}${btn('raw-export','현재 저장 원본 받기')}${btn('import','백업 파일 불러오기')}</div><input id="import-file" type="file" accept=".json,application/json" class="file-input"></div></main>`;}
@@ -142,6 +143,7 @@ document.addEventListener('click',event=>{
     if(action==='close'){dialog.close();return;}
     if(action==='work-view'){workView=el.dataset.view;if(workView==='week')weeklyStart=weekStart(date);render();return;}
     if(action==='work-date'){date=el.dataset.day;workView='day';page='work';render();return;}
+    if(action==='work-week-expand'){const key=childId+'/'+el.dataset.day;weekExpanded.has(key)?weekExpanded.delete(key):weekExpanded.add(key);render();root.querySelector('[data-action="work-week-expand"][data-day="'+el.dataset.day+'"]')?.focus({preventScroll:true});return;}
     if(action==='work-week'){weeklyStart=el.dataset.start;render();return;}
     if(action==='work-list'){listMode=el.dataset.mode;render();return;}
     if(action==='work-group'){listGroup=el.dataset.group;render();return;}

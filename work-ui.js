@@ -5,22 +5,30 @@ const weekdays=['일','월','화','수','목','금','토'];
 const dateLabel=d=>`${Number(d.slice(5,7))}/${Number(d.slice(8))} ${weekdays[new Date(d+'T12:00:00').getDay()]}`;
 const attrs=(id,child,day)=>`data-id="${esc(id)}" data-child="${esc(child)}" data-day="${day}"`;
 export function workTabs(view,button){return `<nav class="work-tabs" aria-label="할 일 보기">${[['day','오늘·내일'],['week','이번 주'],['list','전체 목록']].map(([id,label])=>button('work-view',label,id===view?'active':'',`data-view="${id}" aria-pressed="${id===view}"`)).join('')}</nav>`;}
-function taskRow(row,child,button,compact=false){
+// Weekly labels are a view only; full planned and actual content stays in the record.
+export function weeklyTaskLabel(config,state){
+ if(config.material?.trim())return config.material.trim();
+ const amount=/(^|\s)(?:제\s*)?\d+(?:\.\d+)?(?:\s*[-~–]\s*\d+)?\s*(?:페이지|챕터|레슨|시간|문제|쪽|장|개|회|분|권)(?:씩|까지|부터)?(?=\s|$)/g;
+ const lesson=/(^|\s)(?:챕터|레슨|chapter|lesson)\s*\d+(?:\s*[-~–]\s*\d+)?(?:까지)?(?=\s|$)/gi;
+ const label=String(config.title||'').replace(lesson,' ').replace(amount,' ').replace(/\s+/g,' ').replace(/^[·,\s]+|[·,\s]+$/g,'').trim();
+ return label&&!/^(?:읽기|풀기|하기|읽음|풀음)$/.test(label)?label:categoryInfo(state,config.category)?.label||'할 일';
+}
+function taskRow(row,child,button,compact=false,state){
  const {habit:h,config:v,entry,day,theme}=row,a=attrs(h.id,child,day),actual=entry?.actual;
- const label=actual?(actual.material?`${actual.material} · `:'')+actual.title:taskLabel(v);
+ const label=compact?weeklyTaskLabel(v,state):actual?(actual.material?`${actual.material} · `:'')+actual.title:taskLabel(v);
  if(compact)return `<article class="work-task compact ${entry?'done':''}"><button type="button" class="work-open" data-action="task-edit" ${a} aria-label="${esc(label)} 내용 수정"><span class="work-copy"><strong>${esc(label)}</strong></span></button></article>`;
  return `<article class="work-task ${entry?'done':''} ${compact?'compact':''}"><button type="button" class="work-open" data-action="task-edit" ${a} aria-label="${esc(label)} 내용 수정"><span class="activity-icon ${theme.color}">${icon(theme.icon)}</span><span class="work-copy"><strong>${esc(label)}</strong>${compact?`<small>${esc(theme.childLabel)}</small>`:''}${!compact&&!actual&&v.detail?`<small>${esc(v.detail)}</small>`:''}${actual?`<small>계획: ${esc(taskLabel(v))}${v.detail?` · ${esc(v.detail)}`:''}</small>${actual.note?`<small>실제: ${esc(actual.note)}</small>`:''}`:''}</span></button>${day<=today()?button(entry?'task-undo':'task-done',icon('check'),`work-check ${entry?'checked':''}`,`${a} aria-label="${esc(label)} ${entry?'완료 취소':'완료'}" aria-pressed="${!!entry}"`):'<span class="future-mark">예정</span>'}</article>`;
 }
 function flexibleSection(state,child,day,button,compact=false){
  const plans=flexibleTasks(state,child,day);if(!plans.length)return '';
- if(compact)return `<section class="panel flexible-section"><h2>이번 주 안에 할 일</h2>${plans.map(({habit:h,config:v,editDay})=>`<button type="button" class="work-open" data-action="task-edit" ${attrs(h.id,child,editDay)} data-series="true" aria-label="${esc(taskLabel(v))} 내용 수정"><span class="work-copy"><strong>${esc(taskLabel(v))}</strong></span></button>`).join('')}</section>`;
+ if(compact)return `<section class="panel flexible-section"><h2>이번 주 안에 할 일</h2>${plans.map(({habit:h,config:v,editDay})=>`<button type="button" class="work-open" data-action="task-edit" ${attrs(h.id,child,editDay)} data-series="true" aria-label="${esc(weeklyTaskLabel(v,state))} 내용 수정"><span class="work-copy"><strong>${esc(weeklyTaskLabel(v,state))}</strong></span></button>`).join('')}</section>`;
  return `<section class="panel flexible-section"><h2>이번 주 안에 할 일</h2><p>할 날은 나중에 정해도 괜찮아요. 이미 했다면 바로 기록해요.</p>${plans.map(({habit:h,config:v,count,start,end,planned,theme,editDay})=>{
   const current=today()>=start&&today()<=end,a=attrs(h.id,child,editDay),canToday=current&&!!habitAt(h,today())&&!state.entries[entryKey(child,h.id,today())],tomorrow=addDays(today(),1),canTomorrow=tomorrow>=start&&tomorrow<=end&&!!habitAt(h,tomorrow);
   return `<div class="flexible-row"><button class="work-open" data-action="task-edit" ${a} data-series="true" aria-label="${esc(taskLabel(v))} 내용 수정"><span class="activity-icon ${theme.color}">${icon(theme.icon)}</span><span class="work-copy"><strong>${esc(taskLabel(v))}</strong><small>${v.frequency==='monthly'?'이번 달':'이번 주'} ${v.target}번 중 ${count}번 했어요${planned.length?` · ${planned.map(dateLabel).join(', ')} 예정`:''}</small></span></button><div class="flexible-actions">${end>=today()?button('flex-pick','할 날 고르기','text-btn',`${a} data-start="${start}" data-end="${end}"`):''}${canToday?button('flex-assign',planned.includes(today())?'오늘에 있어요':'오늘 할래요','text-btn',`${attrs(h.id,child,today())} ${planned.includes(today())?'disabled':''}`):''}${canTomorrow?button('flex-assign',planned.includes(tomorrow)?'내일에 있어요':'내일 할래요','text-btn',`${attrs(h.id,child,tomorrow)} ${planned.includes(tomorrow)?'disabled':''}`):''}${canToday?button('task-done','오늘 했어요','secondary',attrs(h.id,child,today())):''}</div></div>`;
  }).join('')}</section>`;
 }
 export function workspace(state,child,options,button){
- const {view,day,week,listMode='current',listGroup='date'}=options;
+ const {view,day,week,listMode='current',listGroup='date',expandedDays=[]}=options;
  let body='';
  if(view==='day'){
   const rows=taskRows(state,child,day),rest=state.restDays[`${child}/${day}`];
@@ -31,7 +39,7 @@ export function workspace(state,child,options,button){
   if(day<=today())body+=button('rest',rest?'쉬는 날 취소':'이날은 쉬는 날','text-btn');
  }else if(view==='week'){
   const days=datesBetween(week,addDays(week,6));
-  body=`<div class="work-week-nav">${button('work-week',icon('left'),'icon-btn',`data-start="${addDays(week,-7)}" aria-label="지난 주 보기"`)}<strong>${dateLabel(week)} – ${dateLabel(days.at(-1))}</strong>${button('work-week',icon('right'),'icon-btn',`data-start="${addDays(week,7)}" aria-label="다음 주 보기"`)}${button('work-week','이번 주','text-btn',`data-start="${weekStart(today())}"`)}</div><p class="planner-intro">한 주를 한눈에 살펴봐요. 제목을 누르면 자세히, 날짜나 더 보기를 누르면 그날 전체를 볼 수 있어요.</p><div class="week-board">${days.map(d=>{const rows=taskRows(state,child,d);return `<section class="week-day ${d===today()?'is-today':''}"><button data-action="work-date" data-day="${d}" class="week-day-title"><span>${weekdays[new Date(d+'T12:00:00').getDay()]}</span><span>${Number(d.slice(5,7))}/${Number(d.slice(8))}</span></button><div class="week-task-list">${rows.slice(0,3).map(r=>taskRow(r,child,button,true)).join('')}</div><div class="week-day-actions">${rows.length>3?button('work-date',`+${rows.length-3}개 더 보기`,'week-more',`data-day="${d}" aria-label="${dateLabel(d)} 할 일 ${rows.length}개 모두 보기"`):''}${button('task-new',icon('plus'),'week-add',`data-day="${d}" aria-label="${dateLabel(d)} ${d<today()?'실천 적기':'할 일 추가'}"`)}</div></section>`;}).join('')}</div>${flexibleSection(state,child,week>today()?week:today()<=days.at(-1)?today():week,button,true)}`;
+  body=`<div class="work-week-nav">${button('work-week',icon('left'),'icon-btn',`data-start="${addDays(week,-7)}" aria-label="지난 주 보기"`)}<strong>${dateLabel(week)} – ${dateLabel(days.at(-1))}</strong>${button('work-week',icon('right'),'icon-btn',`data-start="${addDays(week,7)}" aria-label="다음 주 보기"`)}${button('work-week','이번 주','text-btn',`data-start="${weekStart(today())}"`)}</div><p class="planner-intro">한 주를 한눈에 살펴봐요. 제목을 누르면 자세히, 더 보기를 누르면 이 자리에서 목록이 펼쳐져요.</p><div class="week-board">${days.map(d=>{const rows=taskRows(state,child,d),expanded=expandedDays.includes(d);return `<section class="week-day ${d===today()?'is-today':''} ${expanded?'is-expanded':''}"><button data-action="work-date" data-day="${d}" class="week-day-title"><span>${weekdays[new Date(d+'T12:00:00').getDay()]}</span><span>${Number(d.slice(5,7))}/${Number(d.slice(8))}</span></button><div class="week-task-list">${(expanded?rows:rows.slice(0,3)).map(r=>taskRow(r,child,button,true,state)).join('')}</div><div class="week-day-actions">${rows.length>3?button('work-week-expand',expanded?'접기':`+${rows.length-3}개 더 보기`,'week-more',`data-day="${d}" aria-expanded="${expanded}" aria-label="${dateLabel(d)} 할 일 ${expanded?'접기':'모두 펼치기'}"`):''}${button('task-new',icon('plus'),'week-add',`data-day="${d}" aria-label="${dateLabel(d)} ${d<today()?'실천 적기':'할 일 추가'}"`)}</div></section>`;}).join('')}</div>${flexibleSection(state,child,week>today()?week:today()<=days.at(-1)?today():week,button,true)}`;
  }else{
   body=`<div class="work-list-controls">${[['current','앞으로 할 일'],['past','지난 할 일'],['trash','휴지통']].map(([id,label])=>button('work-list',label,listMode===id?'active secondary':'secondary',`data-mode="${id}"`)).join('')}</div>`;
   if(listMode==='trash'){
